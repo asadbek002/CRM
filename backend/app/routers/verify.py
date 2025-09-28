@@ -4,6 +4,7 @@ from app.database import get_session
 from app.models import VerifiedDoc
 from app.config import QR_DIR, VERIFY_BASE_URL
 import qrcode, os
+from datetime import datetime
 
 router = APIRouter(prefix="/verify", tags=["verify"])
 
@@ -16,14 +17,20 @@ def create_verified_doc(
     note_en: str = Form("This document is certified and verified by LINGUA TRANSLATION."),
     order_id: int | None = Form(None),
     db: Session = Depends(get_session),
-    # agar faqat admin/manager kirishi kerak bo¡®lsa, shu yerga auth dependency qo¡®shing:
+    # agar faqat admin/manager kirishi kerak boï¿½ï¿½lsa, shu yerga auth dependency qoï¿½ï¿½shing:
     # current_user: User = Depends(require_manager_or_admin)
 ):
+    # Convert string date to date object
+    try:
+        issued_date_obj = datetime.strptime(issued_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    
     vd = VerifiedDoc(
         doc_number=doc_number,
         doc_title=doc_title,
         translator_name=translator_name,
-        issued_date=issued_date,
+        issued_date=issued_date_obj,
         note_en=note_en,
         order_id=order_id,
     )
