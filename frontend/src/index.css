@@ -1,0 +1,1 @@
+﻿@tailwind base;@tailwind components;@tailwind utilities;body{margin:0;background:#f6f7fb;color:#111}input,select{border:1px solid #ddd;border-radius:8px;padding:8px;width:100%}button{background:#2563eb;color:#fff;padding:8px 14px;border-radius:8px}
