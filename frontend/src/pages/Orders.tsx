@@ -147,19 +147,14 @@ export default function Orders() {
                                     <td className="px-4 py-3 text-right">
                                         {liveBalance.toLocaleString()}
                                     </td>
+
+                                    <td className="px-4 py-3">{r.payment_method || '-'}</td>
+                                    
                                     <td className="px-4 py-3">
                                         <div className="flex gap-3">
                                             <Link to={`/orders/${r.id}/upload`} className="underline">Fayl</Link>
                                             <Link to={`/orders/${r.id}/verify`} className="underline text-blue-600">Tasdiqlash (QR)</Link>
                                         </div>
-                                    </td>
-
-
-                                    <td className="px-4 py-3">{r.payment_method || '-'}</td>
-                                    <td className="px-4 py-3">
-                                        <Link to={`/orders/${r.id}/upload`} className="underline">
-                                            Fayl
-                                        </Link>
                                     </td>
                                 </tr>
 
