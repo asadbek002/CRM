@@ -4,12 +4,15 @@ import { Link } from 'react-router-dom'
 import api from '../api'
 import PaymentStateSelect from '../components/PaymentStateSelect'
 
+type PaymentState = 'UNPAID' | 'PARTIAL' | 'PAID'
+
 type Row = {
     id: number
     client_name: string
     client_phone: string
     created_at: string
     payment_status: string
+    payment_state?: PaymentState
     customer_type: string
     doc_type: string
     country: string
@@ -36,11 +39,16 @@ export default function Orders() {
     // Yaratilgan sana bo‘yicha filter; '' => hammasi
     const [dateFilter, setDateFilter] = useState<string>('')
 
-    const initialStateFromStatus = (s: string): 'UNPAID' | 'PARTIAL' | 'PAID' => {
-        if (!s) return 'UNPAID'
-        const low = s.toLowerCase()
-        if (low.includes("to'landi") || low.includes('tolandi') || low.includes('paid')) return 'PAID'
-        if (low.includes('qisman') || low.includes('partial')) return 'PARTIAL'
+    const normalizeState = (row: Row): PaymentState => {
+        const state = row.payment_state
+        if (state === 'UNPAID' || state === 'PARTIAL' || state === 'PAID') return state
+        const txt = row.payment_status?.toLowerCase?.() ?? ''
+        if (txt.includes("to'liq") || txt.includes("to'landi") || txt.includes('tolandi') || txt.includes('paid')) {
+            return 'PAID'
+        }
+        if (txt.includes('qisman') || txt.includes('partial')) {
+            return 'PARTIAL'
+        }
         return 'UNPAID'
     }
 
@@ -179,7 +187,7 @@ export default function Orders() {
                                     <td className="px-4 py-3">
                                         <PaymentStateSelect
                                             orderId={r.id}
-                                            initial={initialStateFromStatus(r.payment_status)}
+                                            initial={normalizeState(r)}
                                             onUpdated={load}
                                         />
                                     </td>
