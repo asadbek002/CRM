@@ -1,0 +1,31 @@
+Patched per user's requested features:
+1) Backend
+   - Added models.PaymentState enum and Order fields: paid_amount, payment_state, deleted_at.
+   - Extended PayMethod with bank/e9pay/tbank/other.
+   - Fixed /payments/{order_id} to recalc order.paid_amount and set payment_state.
+   - Enhanced GET /orders with filters: q, deadline_from/to, debt_only, payment_state, pagination, sorting; excludes soft-deleted.
+   - Added endpoints:
+       * PATCH /orders/{id}/payment-state
+       * DELETE /orders/{id} (soft delete)
+       * GET /orders/by-date?date=YYYY-MM-DD&mode=deadline|created
+       * GET /orders/stats/payments?granularity=daily|weekly|monthly
+2) Frontend
+   - Added components/pages: components/PaymentStateSelect.tsx, pages/Calendar.tsx, pages/Stats.tsx
+   - Added CSS helper class .container-xl for wider layout
+
+Integrate routes:
+   In frontend/src/main.tsx, add routes:
+      <Route path="/calendar" element={<RequireAuth><Calendar/></RequireAuth>} />
+      <Route path="/stats" element={<RequireAuth><Stats/></RequireAuth>} />
+   And import:
+      import Calendar from './pages/Calendar'
+      import Stats from './pages/Stats'
+
+   In Orders table, you can render <PaymentStateSelect orderId={row.id} initial={row.payment_state || (row.payment_status==='to\'landi'?'PAID':row.payment_status==='qisman'?'PARTIAL':'UNPAID')} />
+   And add a delete button calling DELETE /orders/{id}.
+
+Database note:
+   Existing SQLite will accept new string-based enums. If using Postgres, generate Alembic migration to add:
+      ALTER TABLE orders ADD COLUMN paid_amount numeric(12,2) DEFAULT 0;
+      ALTER TABLE orders ADD COLUMN payment_state varchar(16) DEFAULT 'UNPAID';
+      ALTER TABLE orders ADD COLUMN deleted_at timestamp NULL;

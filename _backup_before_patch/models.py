@@ -20,20 +20,11 @@ class OrderStatus(str, enum.Enum):
     tayyor = "tayyor"
     topshirildi = "topshirildi"
 
-
-class PaymentState(str, enum.Enum):
-    UNPAID = "UNPAID"
-    PARTIAL = "PARTIAL"
-    PAID = "PAID"
 class PayMethod(str, enum.Enum):
     naqd = "naqd"
     plastik = "plastik"
     payme = "payme"
     terminal = "terminal"
-    bank = "bank"
-    e9pay = "e9pay"
-    tbank = "tbank"
-    other = "other"
 
 class CustomerType(str, enum.Enum):
     office = "office"
@@ -90,10 +81,6 @@ class Order(Base):
 
     total_amount = Column(Numeric(12, 2), default=0)
     notes = Column(Text)
-
-    paid_amount = Column(Numeric(12, 2), default=0)
-    payment_state = Column(Enum(PaymentState), default=PaymentState.UNPAID)
-    deleted_at = Column(DateTime, nullable=True)
 
     payments = relationship(
         "Payment",

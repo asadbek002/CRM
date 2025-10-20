@@ -20,6 +20,8 @@ import './index.css'
 import VerifyCreate from './pages/VerifyCreate'
 import VerifyView from './pages/VerifyView'
 import OrderVerify from './pages/OrderVerify'
+import Calendar from './pages/Calendar'
+import Stats from './pages/Stats'
 
 const qc = new QueryClient()
 
@@ -40,6 +42,8 @@ function Header() {
                     <>
                         <Link to="/orders">Buyurtmalar</Link>
                         <Link to="/orders/new">Yangi buyurtma</Link>
+                        <Link to="/calendar">Calendar</Link>
+                        <Link to="/stats">Stats</Link>
                     </>
                 )}
             </div>
@@ -67,7 +71,7 @@ function Header() {
 
 function Layout({ children }: { children: React.ReactNode }) {
     return (
-        <div className="p-6 max-w-[1200px] mx-auto">
+        <div className="p-6 max-w-[1600px] mx-auto">
             <Header />
             <div className="card">{children}</div>
         </div>
@@ -87,7 +91,7 @@ function App() {
                 }
             />
 
-            {/* Verify sahifalari — hozircha himoyasiz (kerak bo‘lsa RequireAuth bilan o‘raysiz) */}
+            {/* Verify sahifalari — hozircha himoyasiz */}
             <Route
                 path="/verify/create"
                 element={
@@ -126,13 +130,44 @@ function App() {
                     </RequireAuth>
                 }
             />
-            <Route path="/orders/:id/verify" element={<OrderVerify />} />
+            <Route
+                path="/orders/:id/verify"
+                element={
+                    <RequireAuth>
+                        <Layout>
+                            <OrderVerify />
+                        </Layout>
+                    </RequireAuth>
+                }
+            />
             <Route
                 path="/orders/:id/upload"
                 element={
                     <RequireAuth>
                         <Layout>
                             <Upload />
+                        </Layout>
+                    </RequireAuth>
+                }
+            />
+
+            {/* Yangi: Calendar va Stats */}
+            <Route
+                path="/calendar"
+                element={
+                    <RequireAuth>
+                        <Layout>
+                            <Calendar />
+                        </Layout>
+                    </RequireAuth>
+                }
+            />
+            <Route
+                path="/stats"
+                element={
+                    <RequireAuth>
+                        <Layout>
+                            <Stats />
                         </Layout>
                     </RequireAuth>
                 }

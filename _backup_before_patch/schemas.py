@@ -70,7 +70,3 @@ class VerifyOut(BaseModel):
     public_url: str
     qr_filename: str
     qr_image_url: str
-
-
-class PaymentStateUpdate(BaseModel):
-    payment_state: str = Field(pattern="^(UNPAID|PARTIAL|PAID)$")
