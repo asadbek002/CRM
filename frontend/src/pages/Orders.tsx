@@ -1,5 +1,5 @@
 // frontend/src/pages/Orders.tsx
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api'
 import PaymentStateSelect from '../components/PaymentStateSelect'
@@ -29,6 +29,40 @@ type Row = {
 const METHODS = ['naqd', 'plastik', 'bank', 'e9pay', 'tbank', 'other'] as const
 type Method = typeof METHODS[number]
 
+type NormalizedOrderStatus = 'not_started' | 'in_progress' | 'completed'
+type StatusFilter = 'all' | NormalizedOrderStatus
+
+const ORDER_STATUS_LABELS: Record<NormalizedOrderStatus, string> = {
+    not_started: 'Hali boshlanmadi',
+    in_progress: 'Jarayonda',
+    completed: 'Yakunlandi',
+}
+
+const RAW_STATUS_TO_NORMALIZED: Record<string, NormalizedOrderStatus> = {
+    hali_boshlanmagan: 'not_started',
+    jarayonda: 'in_progress',
+    tayyor: 'completed',
+    topshirildi: 'completed',
+    yakunlandi: 'completed',
+}
+
+const normalizeOrderStatus = (status?: string): NormalizedOrderStatus => {
+    if (!status) return 'not_started'
+    return RAW_STATUS_TO_NORMALIZED[status] || 'in_progress'
+}
+
+const formatOrderStatus = (status?: string) => {
+    const normalized = normalizeOrderStatus(status)
+    if (status && RAW_STATUS_TO_NORMALIZED[status]) {
+        return ORDER_STATUS_LABELS[normalized]
+    }
+    if (!status) {
+        return ORDER_STATUS_LABELS.not_started
+    }
+    const human = status.replace(/_/g, ' ')
+    return human.charAt(0).toUpperCase() + human.slice(1)
+}
+
 const todayStr = () => new Date().toISOString().slice(0, 10)
 
 export default function Orders() {
@@ -38,6 +72,7 @@ export default function Orders() {
     const [editMethod, setEditMethod] = useState<Record<number, Method>>({})
     // Yaratilgan sana bo‘yicha filter; '' => hammasi
     const [dateFilter, setDateFilter] = useState<string>('')
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 
     const normalizeState = (row: Row): PaymentState => {
         const state = row.payment_state
@@ -108,55 +143,109 @@ export default function Orders() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dateFilter])
 
-    return (
-        <div className="mx-auto w-full max-w-[1600px] px-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <h2 className="text-xl font-semibold">Buyurtmalar</h2>
+    const statusCounts = useMemo(() => {
+        return rows.reduce(
+            (acc, row) => {
+                const key = normalizeOrderStatus(row.status)
+                acc[key] += 1
+                return acc
+            },
+            { not_started: 0, in_progress: 0, completed: 0 } as Record<NormalizedOrderStatus, number>,
+        )
+    }, [rows])
 
-                {/* KALENDAR — yaratilgan sana bo‘yicha filter */}
-                <div className="flex items-center gap-2">
-                    <div className="relative">
-                        <svg
-                            className="w-5 h-5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                        >
-                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                            <line x1="16" y1="2" x2="16" y2="6"></line>
-                            <line x1="8" y1="2" x2="8" y2="6"></line>
-                            <line x1="3" y1="10" x2="21" y2="10"></line>
-                        </svg>
-                        <input
-                            type="date"
-                            value={dateFilter}
-                            onChange={e => setDateFilter(e.target.value)}
-                            className="border rounded px-3 py-2 pl-9"
-                            placeholder="YYYY-MM-DD"
-                            title="Yaratilgan sana bo‘yicha filtrlash"
-                            max={todayStr()}
-                        />
+    const filteredRows = useMemo(() => {
+        if (statusFilter === 'all') return rows
+        return rows.filter(row => normalizeOrderStatus(row.status) === statusFilter)
+    }, [rows, statusFilter])
+
+    const statusChipTone: Record<NormalizedOrderStatus, string> = {
+        not_started: 'bg-slate-100 text-slate-700 border border-slate-200',
+        in_progress: 'bg-amber-100 text-amber-800 border border-amber-200',
+        completed: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
+    }
+
+    return (
+        <div className="mx-auto w-full px-4 sm:px-6 lg:px-10">
+            <div className="flex flex-col gap-4 mb-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="text-2xl font-semibold text-gray-900">Buyurtmalar</h2>
+
+                    {/* KALENDAR — yaratilgan sana bo‘yicha filter */}
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div className="relative">
+                            <svg
+                                className="w-5 h-5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                            >
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                            <input
+                                type="date"
+                                value={dateFilter}
+                                onChange={e => setDateFilter(e.target.value)}
+                                className="border rounded-lg px-3 py-2 pl-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="YYYY-MM-DD"
+                                title="Yaratilgan sana bo‘yicha filtrlash"
+                                max={todayStr()}
+                            />
+                        </div>
+                        {dateFilter && (
+                            <button
+                                className="border rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
+                                onClick={() => setDateFilter('')}
+                            >
+                                Hammasi
+                            </button>
+                        )}
+                        <Link to="/orders/new">
+                            <button className="btn">+ Buyurtma</button>
+                        </Link>
                     </div>
-                    {dateFilter && (
-                        <button className="border rounded px-2 py-2" onClick={() => setDateFilter('')}>
-                            Hammasi
-                        </button>
-                    )}
-                    <Link to="/orders/new">
-                        <button className="btn">+ Buyurtma</button>
-                    </Link>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                    <span className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                        Buyurtmalar holati:
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {[{ key: 'all', label: `Hammasi (${rows.length})` }].concat(
+                            (['not_started', 'in_progress', 'completed'] as NormalizedOrderStatus[]).map(key => ({
+                                key,
+                                label: `${ORDER_STATUS_LABELS[key]} (${statusCounts[key]})`,
+                            })),
+                        ).map(option => (
+                            <button
+                                key={option.key}
+                                onClick={() => setStatusFilter(option.key as StatusFilter)}
+                                className={`rounded-full px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+                                    statusFilter === option.key
+                                        ? 'bg-blue-600 text-white focus:ring-blue-500'
+                                        : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-400 hover:text-blue-600 focus:ring-blue-400'
+                                }`}
+                            >
+                                {option.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 
-            <div className="overflow-x-auto rounded-2xl shadow">
-                <table className="orders-table min-w-[1200px] w-full">
+            <div className="overflow-x-auto rounded-2xl shadow-lg">
+                <table className="orders-table min-w-[1400px] w-full">
                     <thead>
                         <tr className="bg-gray-100">
                             <th className="px-4 py-3 text-left">Mijoz ismi</th>
                             <th className="px-4 py-3 text-left">Tel raqam</th>
                             <th className="px-4 py-3 text-left">Sana</th>
                             <th className="px-4 py-3 text-left">To‘lov holati</th>
+                            <th className="px-4 py-3 text-left">Buyurtma holati</th>
                             <th className="px-4 py-3 text-left">Mijoz turi</th>
                             <th className="px-4 py-3 text-left">Hujjat turi</th>
                             <th className="px-4 py-3 text-left">Davlat</th>
@@ -173,7 +262,7 @@ export default function Orders() {
                     </thead>
 
                     <tbody>
-                        {rows.map(r => {
+                        {filteredRows.map(r => {
                             const pending = editPaid[r.id] || 0
                             const liveBalance = (r.total_amount || 0) - (r.paid_sum || 0) - pending
                             const selectedMethod: Method = editMethod[r.id] || (r.payment_method as Method) || 'naqd'
@@ -190,6 +279,16 @@ export default function Orders() {
                                             initial={normalizeState(r)}
                                             onUpdated={load}
                                         />
+                                    </td>
+
+                                    <td className="px-4 py-3">
+                                        <span
+                                            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                                                statusChipTone[normalizeOrderStatus(r.status)]
+                                            }`}
+                                        >
+                                            {formatOrderStatus(r.status)}
+                                        </span>
                                     </td>
 
                                     <td className="px-4 py-3">{r.customer_type || '-'}</td>

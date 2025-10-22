@@ -129,13 +129,9 @@ def list_orders(
         order_total = float(o.total_amount or 0)
         balance = order_total - paid
 
-        state_value = getattr(o.payment_state, "value", None)
+        stored_state = getattr(o.payment_state, "value", None)
         auto_state = resolve_payment_state(order_total, paid)
-        if state_value not in PAYMENT_STATE_LABELS:
-            state_value = auto_state
-        # Agar bazadagi qiymat hisob-kitobdan farq qilsa, hisob-kitobni qaytaramiz
-        if state_value != auto_state:
-            state_value = auto_state
+        state_value = stored_state if stored_state in PAYMENT_STATE_LABELS else auto_state
 
         status = PAYMENT_STATE_LABELS.get(state_value, state_value)
 
@@ -155,7 +151,7 @@ def list_orders(
                 "client_phone": o.client.phone if o.client else None,
                 "created_at": o.created_at.strftime("%Y-%m-%d") if o.created_at else None,
                 "payment_status": status,
-                "payment_state": state_value,
+                "payment_state": stored_state if stored_state in PAYMENT_STATE_LABELS else state_value,
                 "customer_type": getattr(o.customer_type, "value", None),
                 "doc_type": o.doc_type,
                 "country": o.country,
@@ -185,12 +181,9 @@ def get_order(order_id: int, db: Session = Depends(get_session)):
     order_total = float(o.total_amount or 0)
     balance = order_total - paid
 
-    state_value = getattr(o.payment_state, "value", None)
+    stored_state = getattr(o.payment_state, "value", None)
     auto_state = resolve_payment_state(order_total, paid)
-    if state_value not in PAYMENT_STATE_LABELS:
-        state_value = auto_state
-    if state_value != auto_state:
-        state_value = auto_state
+    state_value = stored_state if stored_state in PAYMENT_STATE_LABELS else auto_state
     pay_status = PAYMENT_STATE_LABELS.get(state_value, state_value)
 
     return {
@@ -199,7 +192,7 @@ def get_order(order_id: int, db: Session = Depends(get_session)):
         "client_phone": o.client.phone if o.client else None,
         "created_at": o.created_at.strftime("%Y-%m-%d") if o.created_at else None,
         "payment_status": pay_status,
-        "payment_state": state_value,
+        "payment_state": stored_state if stored_state in PAYMENT_STATE_LABELS else state_value,
         "customer_type": getattr(o.customer_type, "value", None),
         "doc_type": o.doc_type,
         "country": o.country,
@@ -370,12 +363,9 @@ def orders_by_date(
         order_total = float(o.total_amount or 0)
         balance = order_total - paid
 
-        state_value = getattr(o.payment_state, "value", None)
+        stored_state = getattr(o.payment_state, "value", None)
         auto_state = resolve_payment_state(order_total, paid)
-        if state_value not in PAYMENT_STATE_LABELS:
-            state_value = auto_state
-        if state_value != auto_state:
-            state_value = auto_state
+        state_value = stored_state if stored_state in PAYMENT_STATE_LABELS else auto_state
         pay_status = PAYMENT_STATE_LABELS.get(state_value, state_value)
 
         last_att = None
@@ -394,7 +384,7 @@ def orders_by_date(
                 "client_phone": o.client.phone if o.client else None,
                 "created_at": o.created_at.strftime("%Y-%m-%d") if o.created_at else None,
                 "payment_status": pay_status,
-                "payment_state": state_value,
+                "payment_state": stored_state if stored_state in PAYMENT_STATE_LABELS else state_value,
                 "customer_type": getattr(o.customer_type, "value", None),
                 "doc_type": o.doc_type,
                 "country": o.country,
