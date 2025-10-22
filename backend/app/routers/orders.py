@@ -1,6 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 # app/routers/orders.py
 from datetime import date, datetime, timedelta
+from collections import defaultdict
 import os
 from uuid import uuid4
 from typing import Optional
@@ -20,6 +21,30 @@ from app.config import (
 )
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+PAYMENT_STATE_LABELS = {
+    "UNPAID": "to'lanmagan",
+    "PARTIAL": "qisman to'langan",
+    "PAID": "to'liq to'langan",
+}
+
+
+def resolve_payment_state(total: float, paid: float) -> str:
+    """Calculate payment state name from total and paid amounts."""
+    total = float(total or 0)
+    paid = float(paid or 0)
+
+    if paid <= 0:
+        return "UNPAID"
+
+    # Agar umumiy summa 0 bo'lsa va to'lov qilingan bo'lsa — to'liq to'langan, aks holda qisman
+    if total <= 0:
+        return "PAID"
+
+    if paid + 0.01 >= total:
+        return "PAID"
+
+    return "PARTIAL"
 
 # ---------------- helpers ----------------
 
@@ -104,12 +129,11 @@ def list_orders(
         order_total = float(o.total_amount or 0)
         balance = order_total - paid
 
-        if paid <= 0:
-            status = "to'lanmagan"
-        elif balance <= 0:
-            status = "to'landi"
-        else:
-            status = "qisman"
+        stored_state = getattr(o.payment_state, "value", None)
+        auto_state = resolve_payment_state(order_total, paid)
+        state_value = stored_state if stored_state in PAYMENT_STATE_LABELS else auto_state
+
+        status = PAYMENT_STATE_LABELS.get(state_value, state_value)
 
         last_att = None
         if getattr(o, "attachments", None):
@@ -127,6 +151,7 @@ def list_orders(
                 "client_phone": o.client.phone if o.client else None,
                 "created_at": o.created_at.strftime("%Y-%m-%d") if o.created_at else None,
                 "payment_status": status,
+                "payment_state": stored_state if stored_state in PAYMENT_STATE_LABELS else state_value,
                 "customer_type": getattr(o.customer_type, "value", None),
                 "doc_type": o.doc_type,
                 "country": o.country,
@@ -156,12 +181,10 @@ def get_order(order_id: int, db: Session = Depends(get_session)):
     order_total = float(o.total_amount or 0)
     balance = order_total - paid
 
-    if paid <= 0:
-        pay_status = "to'lanmagan"
-    elif balance <= 0:
-        pay_status = "to'landi"
-    else:
-        pay_status = "qisman"
+    stored_state = getattr(o.payment_state, "value", None)
+    auto_state = resolve_payment_state(order_total, paid)
+    state_value = stored_state if stored_state in PAYMENT_STATE_LABELS else auto_state
+    pay_status = PAYMENT_STATE_LABELS.get(state_value, state_value)
 
     return {
         "id": o.id,
@@ -169,6 +192,7 @@ def get_order(order_id: int, db: Session = Depends(get_session)):
         "client_phone": o.client.phone if o.client else None,
         "created_at": o.created_at.strftime("%Y-%m-%d") if o.created_at else None,
         "payment_status": pay_status,
+        "payment_state": stored_state if stored_state in PAYMENT_STATE_LABELS else state_value,
         "customer_type": getattr(o.customer_type, "value", None),
         "doc_type": o.doc_type,
         "country": o.country,
@@ -339,13 +363,10 @@ def orders_by_date(
         order_total = float(o.total_amount or 0)
         balance = order_total - paid
 
-        # payment_status (UI’dagi matn uchun)
-        if paid <= 0:
-            pay_status = "to'lanmagan"
-        elif balance <= 0:
-            pay_status = "to'landi"
-        else:
-            pay_status = "qisman"
+        stored_state = getattr(o.payment_state, "value", None)
+        auto_state = resolve_payment_state(order_total, paid)
+        state_value = stored_state if stored_state in PAYMENT_STATE_LABELS else auto_state
+        pay_status = PAYMENT_STATE_LABELS.get(state_value, state_value)
 
         last_att = None
         if getattr(o, "attachments", None):
@@ -363,6 +384,7 @@ def orders_by_date(
                 "client_phone": o.client.phone if o.client else None,
                 "created_at": o.created_at.strftime("%Y-%m-%d") if o.created_at else None,
                 "payment_status": pay_status,
+                "payment_state": stored_state if stored_state in PAYMENT_STATE_LABELS else state_value,
                 "customer_type": getattr(o.customer_type, "value", None),
                 "doc_type": o.doc_type,
                 "country": o.country,
@@ -389,26 +411,110 @@ def payment_stats(
     db: Session = Depends(get_session),
 ):
     """
-    To'lovlar yig'indisini vaqt bo'yicha.
-    SQLite uchun strftime ishlatiladi (dev.db).
+    Kunlik/haftalik/oylik kesimda buyurtmalar bo'yicha to'lov statistikasini qaytaradi.
+    Natijada har bir davr uchun umumiy to'langan summa va to'lov holatlari bo'yicha
+    kesim beriladi.
     """
     if granularity not in ("daily", "weekly", "monthly"):
         granularity = "daily"
 
     fmt = {"daily": "%Y-%m-%d", "weekly": "%Y-%W", "monthly": "%Y-%m"}[granularity]
 
-    q = db.query(
-        func.strftime(fmt, models.Payment.paid_at).label("bucket"),
-        func.coalesce(func.sum(models.Payment.amount), 0).label("sum"),
+    bucket_expr = func.strftime(fmt, models.Order.created_at).label("bucket")
+
+    payments_sum = (
+        db.query(
+            models.Payment.order_id.label("order_id"),
+            func.coalesce(func.sum(models.Payment.amount), 0).label("paid_amount"),
+        )
+        .group_by(models.Payment.order_id)
+        .subquery()
+    )
+
+    q = (
+        db.query(
+            bucket_expr,
+            models.Order.id,
+            func.coalesce(models.Order.total_amount, 0).label("total_amount"),
+            func.coalesce(payments_sum.c.paid_amount, 0).label("paid_amount"),
+        )
+        .outerjoin(payments_sum, payments_sum.c.order_id == models.Order.id)
+        .filter(models.Order.deleted_at.is_(None))
     )
 
     if date_from:
-        q = q.filter(models.Payment.paid_at >= date_from)
+        start_dt = datetime.combine(date_from, datetime.min.time())
+        q = q.filter(models.Order.created_at >= start_dt)
     if date_to:
-        # inclusive bo'lishi uchun keyingi kun boshigacha
-        q = q.filter(models.Payment.paid_at < date_to + timedelta(days=1))
+        end_dt = datetime.combine(date_to, datetime.min.time()) + timedelta(days=1)
+        q = q.filter(models.Order.created_at < end_dt)
 
-    q = q.group_by("bucket").order_by("bucket")
-    rows = [{"bucket": b, "sum": float(s)} for b, s in q.all()]
+    q = q.order_by(bucket_expr, models.Order.id)
+
+    def make_state_bucket():
+        return {
+            key: {"count": 0, "total_amount": 0.0, "paid_amount": 0.0, "balance": 0.0}
+            for key in PAYMENT_STATE_LABELS.keys()
+        }
+
+    buckets = defaultdict(
+        lambda: {
+            "bucket": "",
+            "sum": 0.0,
+            "orders": 0,
+            "total_amount": 0.0,
+            "states": make_state_bucket(),
+        }
+    )
+
+    for bucket, _order_id, total_amount, paid_amount in q.all():
+        bucket_key = bucket or "noma'lum"
+        bucket_data = buckets[bucket_key]
+        bucket_data["bucket"] = bucket_key
+        bucket_data["orders"] += 1
+
+        total_val = float(total_amount or 0)
+        paid_val = float(paid_amount or 0)
+        bucket_data["sum"] += paid_val
+        bucket_data["total_amount"] += total_val
+
+        state_value = resolve_payment_state(total_val, paid_val)
+
+        state_bucket = bucket_data["states"].setdefault(
+            state_value,
+            {"count": 0, "total_amount": 0.0, "paid_amount": 0.0, "balance": 0.0},
+        )
+
+        state_bucket["count"] += 1
+        state_bucket["total_amount"] += total_val
+        state_bucket["paid_amount"] += paid_val
+        balance_val = total_val - paid_val
+        if abs(balance_val) < 0.01:
+            balance_val = 0.0
+        state_bucket["balance"] += balance_val
+
+    rows = []
+    for bucket_key in sorted(buckets.keys()):
+        data = buckets[bucket_key]
+        states_payload = {}
+        for key in PAYMENT_STATE_LABELS.keys():
+            info = data["states"].get(key, {"count": 0, "total_amount": 0.0, "paid_amount": 0.0, "balance": 0.0})
+            states_payload[key] = {
+                "count": int(info["count"]),
+                "total_amount": round(info["total_amount"], 2),
+                "paid_amount": round(info["paid_amount"], 2),
+                "balance": round(info["balance"], 2),
+            }
+
+        rows.append(
+            {
+                "bucket": data["bucket"],
+                "sum": round(data["sum"], 2),
+                "orders": data["orders"],
+                "total_amount": round(data["total_amount"], 2),
+                "states": states_payload,
+            }
+        )
+
     return {"granularity": granularity, "rows": rows}
 
