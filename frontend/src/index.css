@@ -77,12 +77,12 @@ button {
     }
 
     /* Raqamli ustunlarni o'ngga tekislash (Umumiy / To'landi / Qoldiq) */
-    .orders-table th:nth-child(11),
-    .orders-table td:nth-child(11),
     .orders-table th:nth-child(12),
     .orders-table td:nth-child(12),
     .orders-table th:nth-child(13),
-    .orders-table td:nth-child(13) {
+    .orders-table td:nth-child(13),
+    .orders-table th:nth-child(14),
+    .orders-table td:nth-child(14) {
         text-align: right;
     }
 
@@ -90,97 +90,103 @@ button {
     /* 1: Mijoz ismi */
     .orders-table th:nth-child(1),
     .orders-table td:nth-child(1) {
-        width: 100px;
+        width: 160px;
     }
 
     /* 2: Tel raqam */
     .orders-table th:nth-child(2),
     .orders-table td:nth-child(2) {
-        width: 140px;
+        width: 150px;
     }
 
     /* 3: Sana */
     .orders-table th:nth-child(3),
     .orders-table td:nth-child(3) {
-        width: 150px;
+        width: 140px;
     }
 
     /* 4: To‘lov holati */
     .orders-table th:nth-child(4),
     .orders-table td:nth-child(4) {
-        width: 140px;
+        width: 150px;
     }
 
-    /* 5: Mijoz turi */
+    /* 5: Buyurtma holati */
     .orders-table th:nth-child(5),
     .orders-table td:nth-child(5) {
-        width: 120px;
+        width: 150px;
     }
 
-    /* 6: Hujjat turi */
+    /* 6: Mijoz turi */
     .orders-table th:nth-child(6),
     .orders-table td:nth-child(6) {
         width: 140px;
     }
 
-    /* 7: Davlat */
+    /* 7: Hujjat turi */
     .orders-table th:nth-child(7),
     .orders-table td:nth-child(7) {
-        width: 110px;
+        width: 150px;
     }
 
-    /* 8: Filial */
+    /* 8: Davlat */
     .orders-table th:nth-child(8),
     .orders-table td:nth-child(8) {
-        width: 110px;
+        width: 130px;
     }
 
-    /* 9: Hodim */
+    /* 9: Filial */
     .orders-table th:nth-child(9),
     .orders-table td:nth-child(9) {
         width: 140px;
     }
 
-    /* 10: Deadline */
+    /* 10: Hodim */
     .orders-table th:nth-child(10),
     .orders-table td:nth-child(10) {
-        width: 130px;
+        width: 150px;
     }
 
-    /* 11: Umumiy */
+    /* 11: Deadline */
     .orders-table th:nth-child(11),
     .orders-table td:nth-child(11) {
-        width: 120px;
+        width: 150px;
     }
 
-    /* 12: To‘landi */
+    /* 12: Umumiy */
     .orders-table th:nth-child(12),
     .orders-table td:nth-child(12) {
+        width: 150px;
+    }
+
+    /* 13: To‘landi */
+    .orders-table th:nth-child(13),
+    .orders-table td:nth-child(13) {
         width: 220px;
     }
 
-    /* 13: Qoldiq */
-    .orders-table th:nth-child(13),
-    .orders-table td:nth-child(13) {
-        width: 120px;
-    }
-
-    /* 14: To‘lov turi */
+    /* 14: Qoldiq */
     .orders-table th:nth-child(14),
     .orders-table td:nth-child(14) {
-        width: 130px;
+        width: 150px;
     }
 
-    /* 15: Hujjatlar */
+    /* 15: To‘lov turi */
     .orders-table th:nth-child(15),
     .orders-table td:nth-child(15) {
         width: 150px;
     }
 
-    /* 16: Amal (agar bo'lsa) */
+    /* 16: Hujjatlar */
     .orders-table th:nth-child(16),
     .orders-table td:nth-child(16) {
-        width: 110px;
+        width: 160px;
+    }
+
+    /* 17: Amal (agar bo'lsa) */
+    .orders-table th:nth-child(17),
+    .orders-table td:nth-child(17) {
+        width: 120px;
     }
 
 /* -------- Responsiv mayda sozlamalar -------- */
@@ -192,35 +198,34 @@ button {
 
         .orders-table th:nth-child(1),
         .orders-table td:nth-child(1) {
-            width: 200px;
+            width: 180px;
         }
-        /* Mijoz ismi biroz qisqaroq */
-        .orders-table th:nth-child(9),
-        .orders-table td:nth-child(9) {
+        /* Hodim ustuni */
+        .orders-table th:nth-child(10),
+        .orders-table td:nth-child(10) {
             width: 130px;
         }
-        /* Hodim */
-        .orders-table th:nth-child(15),
-        .orders-table td:nth-child(15) {
-            width: 140px;
+        /* Hujjatlar */
+        .orders-table th:nth-child(16),
+        .orders-table td:nth-child(16) {
+            width: 150px;
         }
-    /* Hujjatlar */
 }
 
 @media (max-width: 1280px) {
     .orders-table th:nth-child(4),
     .orders-table td:nth-child(4) {
-        width: 130px;
+        width: 140px;
     }
     /* To‘lov holati */
-    .orders-table th:nth-child(6),
-    .orders-table td:nth-child(6) {
+    .orders-table th:nth-child(7),
+    .orders-table td:nth-child(7) {
         width: 130px;
     }
     /* Hujjat turi */
-    .orders-table th:nth-child(10),
-    .orders-table td:nth-child(10) {
-        width: 120px;
+    .orders-table th:nth-child(11),
+    .orders-table td:nth-child(11) {
+        width: 130px;
     }
     /* Deadline */
 }
