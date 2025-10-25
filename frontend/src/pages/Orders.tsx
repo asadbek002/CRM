@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api'
 import PaymentStateSelect from '../components/PaymentStateSelect'
+import OrderStatusSelect from '../components/OrderStatusSelect'
 
 type PaymentState = 'UNPAID' | 'PARTIAL' | 'PAID'
 
@@ -49,18 +50,6 @@ const RAW_STATUS_TO_NORMALIZED: Record<string, NormalizedOrderStatus> = {
 const normalizeOrderStatus = (status?: string): NormalizedOrderStatus => {
     if (!status) return 'not_started'
     return RAW_STATUS_TO_NORMALIZED[status] || 'in_progress'
-}
-
-const formatOrderStatus = (status?: string) => {
-    const normalized = normalizeOrderStatus(status)
-    if (status && RAW_STATUS_TO_NORMALIZED[status]) {
-        return ORDER_STATUS_LABELS[normalized]
-    }
-    if (!status) {
-        return ORDER_STATUS_LABELS.not_started
-    }
-    const human = status.replace(/_/g, ' ')
-    return human.charAt(0).toUpperCase() + human.slice(1)
 }
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
@@ -158,12 +147,6 @@ export default function Orders() {
         if (statusFilter === 'all') return rows
         return rows.filter(row => normalizeOrderStatus(row.status) === statusFilter)
     }, [rows, statusFilter])
-
-    const statusChipTone: Record<NormalizedOrderStatus, string> = {
-        not_started: 'bg-slate-100 text-slate-700 border border-slate-200',
-        in_progress: 'bg-amber-100 text-amber-800 border border-amber-200',
-        completed: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
-    }
 
     return (
         <div className="mx-auto w-full px-4 sm:px-6 lg:px-10">
@@ -281,12 +264,7 @@ export default function Orders() {
                                     </td>
 
                                     <td className="px-4 py-3">
-                                        <span
-                                            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusChipTone[normalizeOrderStatus(r.status)]
-                                                }`}
-                                        >
-                                            {formatOrderStatus(r.status)}
-                                        </span>
+                                        <OrderStatusSelect orderId={r.id} initial={r.status} onUpdated={load} />
                                     </td>
 
                                     <td className="px-4 py-3">{r.customer_type || '-'}</td>

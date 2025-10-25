@@ -74,3 +74,7 @@ class VerifyOut(BaseModel):
 
 class PaymentStateUpdate(BaseModel):
     payment_state: str = Field(pattern="^(UNPAID|PARTIAL|PAID)$")
+
+
+class OrderStatusUpdate(BaseModel):
+    status: str = Field(pattern="^(hali_boshlanmagan|jarayonda|tayyor|topshirildi)$")

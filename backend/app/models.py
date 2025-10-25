@@ -40,6 +40,11 @@ class CustomerType(str, enum.Enum):
     sns = "sns"
     consulting = "consulting"
 
+class AttachmentKind(str, enum.Enum):
+    translation = "translation"
+    apostille = "apostille"
+    notary = "notary"
+
 # ---------------- Entities ----------------
 class Branch(Base):
     __tablename__ = "branches"
@@ -128,6 +133,7 @@ class Attachment(Base):
     order_id = Column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True)
     order = relationship("Order", back_populates="attachments")
 
+    kind = Column(Enum(AttachmentKind), default=AttachmentKind.translation, nullable=False)
     filename = Column(String(255), nullable=False)
     original_name = Column(String(255), nullable=True)
     mime = Column(String(100), nullable=True)
