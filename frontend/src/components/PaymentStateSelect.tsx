@@ -1,8 +1,14 @@
 // frontend/src/components/PaymentStateSelect.tsx
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import api from '../api'
 
 type PS = 'UNPAID' | 'PARTIAL' | 'PAID'
+
+const LABELS: Record<PS, string> = {
+    UNPAID: "To'lanmagan",
+    PARTIAL: "Qisman to'langan",
+    PAID: "To'liq to'langan",
+}
 
 export default function PaymentStateSelect({
     orderId,
@@ -15,6 +21,10 @@ export default function PaymentStateSelect({
 }) {
     const [value, setValue] = useState<PS>(initial)
     const [busy, setBusy] = useState(false)
+
+    useEffect(() => {
+        setValue(initial)
+    }, [initial])
 
     const onChange = async (nv: PS) => {
         setBusy(true)
@@ -32,11 +42,14 @@ export default function PaymentStateSelect({
             className="border rounded px-2 py-1"
             disabled={busy}
             value={value}
+            title={LABELS[value]}
             onChange={e => onChange(e.target.value as PS)}
         >
-            <option value="UNPAID">UNPAID</option>
-            <option value="PARTIAL">PARTIAL</option>
-            <option value="PAID">PAID</option>
+            {(['UNPAID', 'PARTIAL', 'PAID'] as PS[]).map(key => (
+                <option key={key} value={key}>
+                    {LABELS[key]}
+                </option>
+            ))}
         </select>
     )
 }
