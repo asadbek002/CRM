@@ -6,7 +6,7 @@ import os
 from uuid import uuid4
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Form
 from sqlalchemy import func, cast, Date as SA_Date, or_, and_
 from sqlalchemy.orm import Session
 
@@ -286,51 +286,75 @@ def create_order(payload: schemas.OrderIn, db: Session = Depends(get_session)):
 
 
 @router.get("/{order_id}/attachments")
-def list_attachments(order_id: int, db: Session = Depends(get_session)):
-    o = db.get(models.Order, order_id)
-    if not o:
-        raise HTTPException(status_code=404, detail="Order not found")
-
-    return [
-        {
-            "id": a.id,
-            "display_name": a.original_name or a.filename,
-            "size": a.size or 0,
-        }
-        for a in (o.attachments or [])
-    ]
-
-
-@router.post("/{order_id}/upload", status_code=201)
-def upload_for_order(
+def list_attachments(
     order_id: int,
-    f: UploadFile = File(...),
+    kind: Optional[str] = Query(default=None, description="Filter attachments by kind"),
     db: Session = Depends(get_session),
 ):
     o = db.get(models.Order, order_id)
     if not o:
         raise HTTPException(status_code=404, detail="Order not found")
 
+    attachments = list(o.attachments or [])
+    if kind:
+        try:
+            kind_enum = models.AttachmentKind(kind)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid attachment kind")
+        attachments = [a for a in attachments if a.kind == kind_enum]
+
+    return [
+        {
+            "id": a.id,
+            "display_name": a.original_name or a.filename,
+            "size": a.size or 0,
+            "kind": getattr(a.kind, "value", a.kind),
+        }
+        for a in attachments
+    ]
+
+
+@router.post("/{order_id}/upload", status_code=201)
+def upload_for_order(
+    order_id: int,
+    file: UploadFile = File(None),
+    f: UploadFile = File(None),
+    kind: str = Form("translation"),
+    db: Session = Depends(get_session),
+):
+    o = db.get(models.Order, order_id)
+    if not o:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    upload = f or file
+    if not upload:
+        raise HTTPException(status_code=400, detail="File is required")
+
+    try:
+        kind_enum = models.AttachmentKind(kind)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid attachment kind")
+
     # MIME tekshiruv
-    if ALLOWED_MIME and f.content_type not in ALLOWED_MIME:
+    if ALLOWED_MIME and upload.content_type not in ALLOWED_MIME:
         raise HTTPException(status_code=400, detail="File type not allowed")
 
     # Kengaytma tekshiruv
     ext = ""
-    if f.filename and "." in f.filename:
-        ext = f.filename.rsplit(".", 1)[-1].lower()
+    if upload.filename and "." in upload.filename:
+        ext = upload.filename.rsplit(".", 1)[-1].lower()
     if ALLOWED_EXT and ext not in ALLOWED_EXT:
         raise HTTPException(
             status_code=400, detail="File extension not allowed")
 
     # Hajm tekshiruv
-    data = f.file.read()
+    data = upload.file.read()
     if MAX_UPLOAD_MB and len(data) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large")
 
     # Saqlash
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    safe_orig = sanitize_filename(f.filename or "file")
+    safe_orig = sanitize_filename(upload.filename or "file")
     stored_name = f"{uuid4().hex}.{ext or 'bin'}"
     path = os.path.join(UPLOAD_DIR, stored_name)
     with open(path, "wb") as out:
@@ -338,16 +362,35 @@ def upload_for_order(
 
     att = models.Attachment(
         order_id=o.id,
+        kind=kind_enum,
         filename=stored_name,
         original_name=safe_orig,
-        mime=f.content_type,
+        mime=upload.content_type,
         size=len(data),
     )
     db.add(att)
     db.commit()
     db.refresh(att)
 
-    return {"id": att.id}
+    return {"id": att.id, "kind": att.kind.value}
+
+
+@router.patch("/{order_id}/status")
+def set_order_status(order_id: int, payload: schemas.OrderStatusUpdate, db: Session = Depends(get_session)):
+    o = db.get(models.Order, order_id)
+    if not o:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    try:
+        new_status = models.OrderStatus(payload.status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    o.status = new_status
+    db.commit()
+    db.refresh(o)
+
+    return {"status": o.status.value}
 
 
 @router.patch("/{order_id}/payment-state")
