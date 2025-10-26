@@ -20,7 +20,6 @@ import './index.css'
 import VerifyCreate from './pages/VerifyCreate'
 import VerifyView from './pages/VerifyView'
 import OrderVerify from './pages/OrderVerify'
-import Calendar from './pages/Calendar'
 import Stats from './pages/Stats'
 
 const qc = new QueryClient()
@@ -42,8 +41,7 @@ function Header() {
                     <>
                         <Link to="/orders">Buyurtmalar</Link>
                         <Link to="/orders/new">Yangi buyurtma</Link>
-                        <Link to="/calendar">Calendar</Link>
-                        <Link to="/stats">Stats</Link>
+                        <Link to="/stats">Hisobot</Link>
                     </>
                 )}
             </div>
@@ -152,16 +150,7 @@ function App() {
             />
 
             {/* Yangi: Calendar va Stats */}
-            <Route
-                path="/calendar"
-                element={
-                    <RequireAuth>
-                        <Layout>
-                            <Calendar />
-                        </Layout>
-                    </RequireAuth>
-                }
-            />
+
             <Route
                 path="/stats"
                 element={

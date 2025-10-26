@@ -1,8 +1,9 @@
-// frontend/src/pages/Orders.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api'
 import PaymentStateSelect from '../components/PaymentStateSelect'
+import OrderStatusSelect from '../components/OrderStatusSelect'
+import OrderDrawer from '../components/OrderDrawer'
 
 type PaymentState = 'UNPAID' | 'PARTIAL' | 'PAID'
 
@@ -26,7 +27,7 @@ type Row = {
     status: string
 }
 
-const METHODS = ['naqd', 'terminal', 'o`tkazma', 'payme',] as const
+const METHODS = ['naqd', 'terminal', "o`tkazma", 'payme'] as const
 type Method = typeof METHODS[number]
 
 type NormalizedOrderStatus = 'not_started' | 'in_progress' | 'completed'
@@ -51,18 +52,6 @@ const normalizeOrderStatus = (status?: string): NormalizedOrderStatus => {
     return RAW_STATUS_TO_NORMALIZED[status] || 'in_progress'
 }
 
-const formatOrderStatus = (status?: string) => {
-    const normalized = normalizeOrderStatus(status)
-    if (status && RAW_STATUS_TO_NORMALIZED[status]) {
-        return ORDER_STATUS_LABELS[normalized]
-    }
-    if (!status) {
-        return ORDER_STATUS_LABELS.not_started
-    }
-    const human = status.replace(/_/g, ' ')
-    return human.charAt(0).toUpperCase() + human.slice(1)
-}
-
 const todayStr = () => new Date().toISOString().slice(0, 10)
 
 export default function Orders() {
@@ -70,9 +59,9 @@ export default function Orders() {
     const [editPaid, setEditPaid] = useState<Record<number, number>>({})
     const [saving, setSaving] = useState<Record<number, boolean>>({})
     const [editMethod, setEditMethod] = useState<Record<number, Method>>({})
-    // Yaratilgan sana bo‘yicha filter; '' => hammasi
-    const [dateFilter, setDateFilter] = useState<string>('')
+    const [dateFilter, setDateFilter] = useState<string>('') // '' => все
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+    const [drawerOrder, setDrawerOrder] = useState<Row | null>(null)
 
     const normalizeState = (row: Row): PaymentState => {
         const state = row.payment_state
@@ -88,7 +77,7 @@ export default function Orders() {
     }
 
     const parseAmount = (s: string) => {
-        const cleaned = s.replace(/\s/g, '').replace(/,/g, '')
+        const cleaned = s.replace(/\s/g, '').replace(/,/g, '').replace(/₩|\$/g, '')
         const n = Number(cleaned)
         return isNaN(n) ? 0 : n
     }
@@ -97,17 +86,38 @@ export default function Orders() {
         setEditPaid(prev => ({ ...prev, [id]: parseAmount(val) }))
     }
 
-    const setMethodInput = (id: number, val: Method) => {
-        setEditMethod(prev => ({ ...prev, [id]: val }))
-    }
+    const load = useCallback(async () => {
+        if (!dateFilter) {
+            const r = await api.get('/orders')
+            setRows(r.data?.rows || [])
+            return
+        }
+        const r = await api.get('/orders/by-date', {
+            params: { date: dateFilter, mode: 'created' },
+        })
+        setRows(r.data?.rows || [])
+    }, [dateFilter])
 
-    const delOrder = async (id: number) => {
-        if (!confirm('O‘chirishni tasdiqlaysizmi?')) return
-        await api.delete(`/orders/${id}`)
-        await load()
-    }
+    useEffect(() => {
+        load()
+    }, [load])
 
-    const savePayment = async (row: Row) => {
+    const setMethodInput = useCallback(async (id: number, val: Method) => {
+        setEditMethod(prev => ({ ...prev, [id]: val })) // оптимистично
+        try {
+            await api.patch(`/orders/${id}/payment-method`, { method: val })
+            // при необходимости можно refresh: await load()
+        } catch (e: any) {
+            alert(e?.response?.data?.detail || 'To‘lov turini saqlashda xato')
+            setEditMethod(prev => {
+                const copy = { ...prev }
+                delete copy[id]
+                return copy
+            })
+        }
+    }, [])
+
+    const savePayment = useCallback(async (row: Row) => {
         const add = editPaid[row.id] || 0
         if (add <= 0) return
         const method: Method = editMethod[row.id] || (row.payment_method as Method) || 'naqd'
@@ -123,25 +133,13 @@ export default function Orders() {
         } finally {
             setSaving(s => ({ ...s, [row.id]: false }))
         }
-    }
+    }, [editPaid, editMethod, load])
 
-    const load = async () => {
-        if (!dateFilter) {
-            const r = await api.get('/orders')
-            setRows(r.data?.rows || [])
-            return
-        }
-        const r = await api.get('/orders/by-date', {
-            params: { date: dateFilter, mode: 'created' },
-        })
-        // MUHIM: mapping yo‘q — serverdan kelgan maydonlarni o‘zgartirmay qo‘yamiz
-        setRows(r.data?.rows || [])
-    }
-
-    useEffect(() => {
-        load()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dateFilter])
+    const delOrder = useCallback(async (id: number) => {
+        if (!confirm('O‘chirishni tasdiqlaysizmi?')) return
+        await api.delete(`/orders/${id}`)
+        await load()
+    }, [load])
 
     const statusCounts = useMemo(() => {
         return rows.reduce(
@@ -159,19 +157,12 @@ export default function Orders() {
         return rows.filter(row => normalizeOrderStatus(row.status) === statusFilter)
     }, [rows, statusFilter])
 
-    const statusChipTone: Record<NormalizedOrderStatus, string> = {
-        not_started: 'bg-slate-100 text-slate-700 border border-slate-200',
-        in_progress: 'bg-amber-100 text-amber-800 border border-amber-200',
-        completed: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
-    }
-
     return (
         <div className="mx-auto w-full px-4 sm:px-6 lg:px-10">
             <div className="flex flex-col gap-4 mb-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <h2 className="text-2xl font-semibold text-gray-900">Buyurtmalar</h2>
 
-                    {/* KALENDAR — yaratilgan sana bo‘yicha filter */}
                     <div className="flex flex-wrap items-center gap-3">
                         <div className="relative">
                             <svg
@@ -225,8 +216,8 @@ export default function Orders() {
                                 key={option.key}
                                 onClick={() => setStatusFilter(option.key as StatusFilter)}
                                 className={`rounded-full px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-1 ${statusFilter === option.key
-                                    ? 'bg-blue-600 text-white focus:ring-blue-500'
-                                    : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-400 hover:text-blue-600 focus:ring-blue-400'
+                                        ? 'bg-blue-600 text-white focus:ring-blue-500'
+                                        : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-400 hover:text-blue-600 focus:ring-blue-400'
                                     }`}
                             >
                                 {option.label}
@@ -268,7 +259,15 @@ export default function Orders() {
 
                             return (
                                 <tr key={r.id} className="border-t">
-                                    <td className="px-4 py-3">{r.client_name}</td>
+                                    <td className="px-4 py-3">
+                                        <button
+                                            className="text-left text-blue-600 hover:underline"
+                                            onClick={() => setDrawerOrder(r)}
+                                        >
+                                            {r.client_name}
+                                        </button>
+                                    </td>
+
                                     <td className="px-4 py-3">{r.client_phone}</td>
                                     <td className="px-4 py-3">{r.created_at}</td>
 
@@ -281,16 +280,17 @@ export default function Orders() {
                                     </td>
 
                                     <td className="px-4 py-3">
-                                        <span
-                                            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusChipTone[normalizeOrderStatus(r.status)]
-                                                }`}
-                                        >
-                                            {formatOrderStatus(r.status)}
-                                        </span>
+                                        <OrderStatusSelect orderId={r.id} initial={r.status} onUpdated={load} />
                                     </td>
 
                                     <td className="px-4 py-3">{r.customer_type || '-'}</td>
-                                    <td className="px-4 py-3">{r.doc_type}</td>
+
+                                    <td className="px-4 py-3 max-w-[220px]">
+                                        <span className="block truncate" title={r.doc_type}>
+                                            {r.doc_type || '-'}
+                                        </span>
+                                    </td>
+
                                     <td className="px-4 py-3">{r.country}</td>
                                     <td className="px-4 py-3">{r.branch || '-'}</td>
                                     <td className="px-4 py-3">{r.manager || '-'}</td>
@@ -355,6 +355,14 @@ export default function Orders() {
                     </tbody>
                 </table>
             </div>
+
+            {drawerOrder && (
+                <OrderDrawer
+                    order={drawerOrder}
+                    open={!!drawerOrder}
+                    onClose={() => setDrawerOrder(null)}
+                />
+            )}
         </div>
     )
 }

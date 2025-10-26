@@ -1,16 +1,20 @@
 # app/schemas.py
 from pydantic import BaseModel, constr, Field, ConfigDict, field_validator
 from datetime import date
+from datetime import datetime
 from typing import Optional
+
 
 class LoginIn(BaseModel):
     username: str
     password: str
 
+
 class ClientIn(BaseModel):
     full_name: str
     phone: constr(strip_whitespace=True, min_length=7)
     note: Optional[str] = None
+
 
 class PaymentIn(BaseModel):
     amount: float
@@ -18,12 +22,14 @@ class PaymentIn(BaseModel):
     paid_at: Optional[date] = None
     note: Optional[str] = None
 
+
 class OrderIn(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     client_id: int
     branch_id: Optional[int] = None
-    manager_id: Optional[int] = Field(default=None, validation_alias="staff_id")
+    manager_id: Optional[int] = Field(
+        default=None, validation_alias="staff_id")
     status: Optional[str] = None
     customer_type: Optional[str] = None
     doc_type: Optional[str] = None
@@ -59,7 +65,8 @@ class VerifyCreateIn(BaseModel):
             try:
                 return date.fromisoformat(v)  # "YYYY-MM-DD"
             except ValueError:
-                raise ValueError("issued_date format YYYY-MM-DD bo'lishi kerak")
+                raise ValueError(
+                    "issued_date format YYYY-MM-DD bo'lishi kerak")
         return v
 
 
@@ -74,3 +81,24 @@ class VerifyOut(BaseModel):
 
 class PaymentStateUpdate(BaseModel):
     payment_state: str = Field(pattern="^(UNPAID|PARTIAL|PAID)$")
+
+
+class OrderStatusUpdate(BaseModel):
+    status: str = Field(
+        pattern="^(hali_boshlanmagan|jarayonda|tayyor|topshirildi)$")
+
+
+class CommentCreate(BaseModel):
+    text: str
+    author: str | None = None
+
+
+class CommentOut(BaseModel):
+    id: int
+    order_id: int
+    text: str
+    author: str | None
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
