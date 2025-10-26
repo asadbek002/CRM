@@ -1,9 +1,13 @@
 # app/routers/auth.py
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.database import get_session, engine
+
 from app import models
-from app.utils.security import verify_pw, create_token, hash_pw
+from app.database import engine, get_session
+from app.deps import get_current_user
+from app.utils.security import create_token, hash_pw, verify_pw
 
 # Eslatma: create_all ni aslida startupda chaqirish yaxshiroq,
 # lekin hozircha ishlashi uchun qoldirdik.
@@ -51,11 +55,31 @@ def login(payload: dict, db: Session = Depends(get_session)):
     if not user or not verify_pw(password, user.password_hash):
         raise HTTPException(status_code=401, detail="Noto'g'ri login yoki parol")
 
+    user.last_login_at = datetime.utcnow()
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
     return {
         "access_token": create_token(str(user.id)),
         "user": {
             "id": user.id,
             "name": user.full_name,
             "role": user.role.value,
+            "branch_id": user.branch_id,
         },
+    }
+
+
+@router.get("/me")
+def me(current_user: models.User = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "name": current_user.full_name,
+        "email": current_user.email,
+        "phone": current_user.phone,
+        "role": current_user.role.value,
+        "branch_id": current_user.branch_id,
+        "branch_name": current_user.branch.name if current_user.branch else None,
+        "last_login_at": current_user.last_login_at,
     }

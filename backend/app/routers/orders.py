@@ -6,12 +6,22 @@ import os
 from uuid import uuid4
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Form
-from sqlalchemy import func, cast, Date as SA_Date, or_, and_
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
+from sqlalchemy import Date as SA_Date, and_, cast, func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_session
 from app import models, schemas
+from app.deps import ensure_branch_scope, get_current_user, require_roles
+from app.services.audit import log_action
 from pydantic import BaseModel, constr
 from app.config import (
     UPLOAD_DIR,
@@ -50,6 +60,64 @@ def resolve_payment_state(total: float, paid: float) -> str:
 # ---------------- helpers ----------------
 
 
+def _apply_order_scope(qs, user: models.User):
+    role = user.role
+    if role == models.Role.admin:
+        return qs
+
+    if role in {models.Role.manager, models.Role.accountant}:
+        if user.branch_id:
+            return qs.filter(models.Order.branch_id == user.branch_id)
+        return qs
+
+    if role == models.Role.staff:
+        return qs.filter(models.Order.manager_id == user.id)
+
+    if role == models.Role.viewer:
+        if user.branch_id:
+            return qs.filter(models.Order.branch_id == user.branch_id)
+        return qs
+
+    return qs
+
+
+def _ensure_can_view(order: models.Order | None, user: models.User) -> models.Order:
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if user.role == models.Role.admin:
+        return order
+
+    if user.role in {models.Role.manager, models.Role.accountant, models.Role.viewer}:
+        if user.branch_id and order.branch_id and order.branch_id != user.branch_id:
+            raise HTTPException(status_code=403, detail="Branch access denied")
+        return order
+
+    if user.role == models.Role.staff:
+        if order.manager_id != user.id:
+            raise HTTPException(status_code=403, detail="Order access denied")
+        return order
+
+    raise HTTPException(status_code=403, detail="Access denied")
+
+
+def _ensure_can_manage(order: models.Order, user: models.User) -> None:
+    if user.role == models.Role.admin:
+        return
+
+    if user.role == models.Role.manager:
+        if user.branch_id and order.branch_id and order.branch_id != user.branch_id:
+            raise HTTPException(status_code=403, detail="Branch access denied")
+        return
+
+    if user.role == models.Role.staff:
+        if order.manager_id != user.id:
+            raise HTTPException(status_code=403, detail="Order access denied")
+        return
+
+    raise HTTPException(status_code=403, detail="Order management access denied")
+
+
 def paid_sum(db: Session, order_id: int) -> float:
     """Berilgan order uchun jami to'langan summani qaytaradi."""
     return float(
@@ -65,7 +133,12 @@ def paid_sum(db: Session, order_id: int) -> float:
 @router.get("")
 def list_orders(
     db: Session = Depends(get_session),
+    current_user: models.User = Depends(get_current_user),
     q: Optional[str] = None,
+    branch_id: Optional[int] = None,
+    manager_id: Optional[int] = None,
+    customer_type: Optional[str] = None,
+    doc_type: Optional[str] = None,
     # deadline bo‘yicha oraliq filtr
     deadline_from: Optional[date] = None,
     deadline_to: Optional[date] = None,
@@ -100,6 +173,7 @@ def list_orders(
         .outerjoin(payments_sum, payments_sum.c.order_id == models.Order.id)
     )
     qs = qs.filter(models.Order.deleted_at.is_(None))
+    qs = _apply_order_scope(qs, current_user)
 
     if q:
         like = f"%{q}%"
@@ -107,6 +181,21 @@ def list_orders(
             (models.Client.full_name.ilike(like)) |
             (models.Client.phone.ilike(like))
         )
+
+    if branch_id:
+        branch_id = ensure_branch_scope(current_user, branch_id)
+        qs = qs.filter(models.Order.branch_id == branch_id)
+
+    if manager_id:
+        if current_user.role == models.Role.staff and manager_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Manager filter is not allowed")
+        qs = qs.filter(models.Order.manager_id == manager_id)
+
+    if customer_type:
+        qs = qs.filter(models.Order.customer_type == customer_type)
+
+    if doc_type:
+        qs = qs.filter(models.Order.doc_type == doc_type)
 
     # deadline bo‘yicha
     if deadline_from:
@@ -217,11 +306,14 @@ def list_orders(
 
 
 @router.get("/{order_id:int}")
-def get_order(order_id: int, db: Session = Depends(get_session)):
+def get_order(
+    order_id: int,
+    db: Session = Depends(get_session),
+    current_user: models.User = Depends(get_current_user),
+):
     """Bitta order tafsiloti (attachments va payments bilan)."""
     o = db.get(models.Order, order_id)
-    if not o:
-        raise HTTPException(status_code=404, detail="Order not found")
+    o = _ensure_can_view(o, current_user)
 
     paid = paid_sum(db, o.id)
     order_total = float(o.total_amount or 0)
@@ -257,6 +349,8 @@ def get_order(order_id: int, db: Session = Depends(get_session)):
                 "mime": a.mime,
                 "size": a.size or 0,
                 "created_at": a.created_at.strftime("%Y-%m-%d") if a.created_at else None,
+                "status": getattr(a.status, "value", a.status),
+                "review_comment": a.review_comment,
             }
             for a in (o.attachments or [])
         ],
@@ -274,13 +368,38 @@ def get_order(order_id: int, db: Session = Depends(get_session)):
 
 
 @router.post("", status_code=201)
-def create_order(payload: schemas.OrderIn, db: Session = Depends(get_session)):
+def create_order(
+    payload: schemas.OrderIn,
+    db: Session = Depends(get_session),
+    current_user: models.User = Depends(
+        require_roles(models.Role.admin, models.Role.manager)
+    ),
+):
     if payload.deadline and payload.deadline < date.today():
         raise HTTPException(
             status_code=400, detail="deadline o'tmishda bo'lishi mumkin emas")
 
-    o = models.Order(**payload.model_dump())
+    data = payload.model_dump()
+    if not data.get("branch_id") and current_user.branch_id:
+        data["branch_id"] = current_user.branch_id
+
+    if not data.get("manager_id"):
+        data["manager_id"] = current_user.id
+
+    o = models.Order(**data)
     db.add(o)
+    db.flush()
+
+    log_action(
+        db,
+        user=current_user,
+        action="order.create",
+        entity_type="order",
+        entity_id=o.id,
+        branch_id=o.branch_id,
+        extra={"branch_id": o.branch_id, "manager_id": o.manager_id},
+    )
+
     db.commit()
     db.refresh(o)
     return {"id": o.id}
@@ -291,13 +410,15 @@ def list_attachments(
     order_id: int,
     kind: Optional[str] = Query(
         default=None, description="Filter attachments by kind"),
+    status_filter: Optional[str] = Query(
+        default=None, description="Filter attachments by status"),
     db: Session = Depends(get_session),
+    current_user: models.User = Depends(get_current_user),
 ):
-    o = db.get(models.Order, order_id)
-    if not o:
-        raise HTTPException(status_code=404, detail="Order not found")
+    order = db.get(models.Order, order_id)
+    order = _ensure_can_view(order, current_user)
 
-    attachments = list(o.attachments or [])
+    attachments = list(order.attachments or [])
     if kind:
         try:
             kind_enum = models.AttachmentKind(kind)
@@ -306,12 +427,22 @@ def list_attachments(
                 status_code=400, detail="Invalid attachment kind")
         attachments = [a for a in attachments if a.kind == kind_enum]
 
+    if status_filter:
+        try:
+            status_enum = models.AttachmentStatus(status_filter)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid attachment status")
+        attachments = [a for a in attachments if a.status == status_enum]
+
     return [
         {
             "id": a.id,
             "display_name": a.original_name or a.filename,
             "size": a.size or 0,
             "kind": getattr(a.kind, "value", a.kind),
+            "status": getattr(a.status, "value", a.status),
+            "review_comment": a.review_comment,
         }
         for a in attachments
     ]
@@ -324,10 +455,13 @@ def upload_for_order(
     f: UploadFile = File(None),
     kind: str = Form("translation"),
     db: Session = Depends(get_session),
+    current_user: models.User = Depends(
+        require_roles(models.Role.admin, models.Role.manager, models.Role.staff)
+    ),
 ):
     o = db.get(models.Order, order_id)
-    if not o:
-        raise HTTPException(status_code=404, detail="Order not found")
+    o = _ensure_can_view(o, current_user)
+    _ensure_can_manage(o, current_user)
 
     upload = f or file
     if not upload:
@@ -366,23 +500,44 @@ def upload_for_order(
     att = models.Attachment(
         order_id=o.id,
         kind=kind_enum,
+        status=models.AttachmentStatus.pending_review,
         filename=stored_name,
         original_name=safe_orig,
         mime=upload.content_type,
         size=len(data),
+        uploaded_by_id=current_user.id,
     )
     db.add(att)
+    db.flush()
+
+    log_action(
+        db,
+        user=current_user,
+        action="attachment.upload",
+        entity_type="attachment",
+        entity_id=att.id,
+        branch_id=o.branch_id,
+        extra={"order_id": o.id, "kind": kind_enum.value},
+    )
+
     db.commit()
     db.refresh(att)
 
-    return {"id": att.id, "kind": att.kind.value}
+    return {"id": att.id, "kind": att.kind.value, "status": att.status.value}
 
 
 @router.patch("/{order_id}/status")
-def set_order_status(order_id: int, payload: schemas.OrderStatusUpdate, db: Session = Depends(get_session)):
+def set_order_status(
+    order_id: int,
+    payload: schemas.OrderStatusUpdate,
+    db: Session = Depends(get_session),
+    current_user: models.User = Depends(
+        require_roles(models.Role.admin, models.Role.manager)
+    ),
+):
     o = db.get(models.Order, order_id)
-    if not o:
-        raise HTTPException(status_code=404, detail="Order not found")
+    o = _ensure_can_view(o, current_user)
+    _ensure_can_manage(o, current_user)
 
     try:
         new_status = models.OrderStatus(payload.status)
@@ -390,6 +545,15 @@ def set_order_status(order_id: int, payload: schemas.OrderStatusUpdate, db: Sess
         raise HTTPException(status_code=400, detail="Invalid status")
 
     o.status = new_status
+    log_action(
+        db,
+        user=current_user,
+        action="order.status_change",
+        entity_type="order",
+        entity_id=o.id,
+        branch_id=o.branch_id,
+        extra={"status": new_status.value},
+    )
     db.commit()
     db.refresh(o)
 
@@ -410,41 +574,85 @@ _METHOD_MAP = {
 
 
 @router.patch("/{order_id}/payment-method", status_code=204)
-def set_payment_method(order_id: int, body: dict, db: Session = Depends(get_session)):
+def set_payment_method(
+    order_id: int,
+    body: dict,
+    db: Session = Depends(get_session),
+    current_user: models.User = Depends(
+        require_roles(models.Role.admin, models.Role.manager, models.Role.accountant)
+    ),
+):
     raw = (body.get("method") or "").strip().lower()
     allowed = ["naqd", "terminal", "payme", "o`tkazma"]
     if raw not in allowed:
         raise HTTPException(status_code=400, detail="Noto‘g‘ri to‘lov turi")
 
     o = db.get(models.Order, order_id)
-    if not o:
-        raise HTTPException(status_code=404, detail="Order not found")
+    o = _ensure_can_view(o, current_user)
 
     # сохраняем как есть
     o.payment_method = models.PayMethod(raw)
+    log_action(
+        db,
+        user=current_user,
+        action="order.payment_method",
+        entity_type="order",
+        entity_id=o.id,
+        branch_id=o.branch_id,
+        extra={"method": raw},
+    )
     db.commit()
 
 
 @router.patch("/{order_id}/payment-state")
-def set_payment_state(order_id: int, payload: schemas.PaymentStateUpdate, db: Session = Depends(get_session)):
+def set_payment_state(
+    order_id: int,
+    payload: schemas.PaymentStateUpdate,
+    db: Session = Depends(get_session),
+    current_user: models.User = Depends(
+        require_roles(models.Role.admin, models.Role.manager, models.Role.accountant)
+    ),
+):
     o = db.get(models.Order, order_id)
-    if not o:
-        raise HTTPException(status_code=404, detail="Order not found")
+    o = _ensure_can_view(o, current_user)
     from app.models import PaymentState as _PS
     # nom bilan yoki qiymat bilan
     o.payment_state = _PS[payload.payment_state] if hasattr(
         _PS, payload.payment_state) else _PS(payload.payment_state)
+    log_action(
+        db,
+        user=current_user,
+        action="order.payment_state",
+        entity_type="order",
+        entity_id=o.id,
+        branch_id=o.branch_id,
+        extra={"payment_state": o.payment_state.value},
+    )
     db.commit()
     db.refresh(o)
     return {"ok": True, "payment_state": o.payment_state.value}
 
 
 @router.delete("/{order_id}")
-def delete_order(order_id: int, db: Session = Depends(get_session)):
+def delete_order(
+    order_id: int,
+    db: Session = Depends(get_session),
+    current_user: models.User = Depends(
+        require_roles(models.Role.admin, models.Role.manager)
+    ),
+):
     o = db.get(models.Order, order_id)
-    if not o:
-        raise HTTPException(status_code=404, detail="Order not found")
+    o = _ensure_can_view(o, current_user)
+    _ensure_can_manage(o, current_user)
     o.deleted_at = datetime.utcnow()
+    log_action(
+        db,
+        user=current_user,
+        action="order.delete",
+        entity_type="order",
+        entity_id=o.id,
+        branch_id=o.branch_id,
+    )
     db.commit()
     return {"ok": True}
 
@@ -454,6 +662,7 @@ def orders_by_date(
     date: date = Query(..., description="YYYY-MM-DD"),
     mode: str = Query("created", regex="^(created|deadline)$"),
     db: Session = Depends(get_session),
+    current_user: models.User = Depends(get_current_user),
 ):
     """
     Bir kunlik buyurtmalar:
@@ -466,6 +675,7 @@ def orders_by_date(
         .join(models.Client)
         .filter(models.Order.deleted_at.is_(None))
     )
+    qs = _apply_order_scope(qs, current_user)
 
     if mode == "created":
         start_dt = datetime.combine(date, datetime.min.time())
@@ -531,7 +741,12 @@ def payment_stats(
     granularity: str = "daily",
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
+    branch_id: Optional[int] = None,
+    manager_id: Optional[int] = None,
+    customer_type: Optional[str] = None,
+    doc_type: Optional[str] = None,
     db: Session = Depends(get_session),
+    current_user: models.User = Depends(get_current_user),
 ):
     """
     Kunlik/haftalik/oylik kesimda buyurtmalar bo'yicha to'lov statistikasini qaytaradi.
@@ -581,6 +796,22 @@ def payment_stats(
         .outerjoin(payments_sum, payments_sum.c.order_id == models.Order.id)
         .filter(models.Order.deleted_at.is_(None))
     )
+    q = _apply_order_scope(q, current_user)
+
+    if branch_id:
+        branch_id = ensure_branch_scope(current_user, branch_id)
+        q = q.filter(models.Order.branch_id == branch_id)
+
+    if manager_id:
+        if current_user.role == models.Role.staff and manager_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Manager filter is not allowed")
+        q = q.filter(models.Order.manager_id == manager_id)
+
+    if customer_type:
+        q = q.filter(models.Order.customer_type == customer_type)
+
+    if doc_type:
+        q = q.filter(models.Order.doc_type == doc_type)
 
     if date_from:
         start_dt = datetime.combine(date_from, datetime.min.time())

@@ -21,6 +21,8 @@ import VerifyCreate from './pages/VerifyCreate'
 import VerifyView from './pages/VerifyView'
 import OrderVerify from './pages/OrderVerify'
 import Stats from './pages/Stats'
+import Dashboard from './pages/Dashboard'
+import Employees from './pages/Employees'
 
 const qc = new QueryClient()
 
@@ -39,9 +41,11 @@ function Header() {
                 <span className="text-3xl font-semibold">Lingua Translation CRM system</span>
                 {token && (
                     <>
+                        <Link to="/dashboard">Dashboard</Link>
                         <Link to="/orders">Buyurtmalar</Link>
                         <Link to="/orders/new">Yangi buyurtma</Link>
                         <Link to="/stats">Hisobot</Link>
+                        {user?.role === 'admin' && <Link to="/employees">Xodimlar</Link>}
                     </>
                 )}
             </div>
@@ -74,6 +78,14 @@ function Layout({ children }: { children: React.ReactNode }) {
             <div className="card">{children}</div>
         </div>
     )
+}
+
+function RequireRole({ roles, children }: { roles: string[]; children: JSX.Element }) {
+    const { user } = useAuth()
+    if (!user || !roles.includes(user.role)) {
+        return <Navigate to="/dashboard" replace />
+    }
+    return children
 }
 
 function App() {
@@ -162,8 +174,32 @@ function App() {
                 }
             />
 
+            <Route
+                path="/dashboard"
+                element={
+                    <RequireAuth>
+                        <Layout>
+                            <Dashboard />
+                        </Layout>
+                    </RequireAuth>
+                }
+            />
+
+            <Route
+                path="/employees"
+                element={
+                    <RequireAuth>
+                        <RequireRole roles={['admin']}>
+                            <Layout>
+                                <Employees />
+                            </Layout>
+                        </RequireRole>
+                    </RequireAuth>
+                }
+            />
+
             {/* Default */}
-            <Route path="*" element={<Navigate to="/orders" />} />
+            <Route path="*" element={<Navigate to="/dashboard" />} />
         </Routes>
     )
 }
