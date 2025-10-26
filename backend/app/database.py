@@ -23,19 +23,60 @@ def get_session():
 
 
 def _ensure_sqlite_columns():
-    """
-    Dev-хелпер: если в SQLite нет колонки attachments.kind — добавим.
-    Безопасно для пустой/небольшой dev-базы. В проде делайте Alembic.
-    """
+    """Dev helper that backfills newly introduced columns for SQLite."""
+
     if not DATABASE_URL.startswith("sqlite:///"):
         return
+
+    def _has_column(conn, table: str, column: str) -> bool:
+        rows = conn.execute(text(f"PRAGMA table_info({table});")).fetchall()
+        return any(col[1] == column for col in rows)
+
     with engine.begin() as conn:
-        cols = conn.execute(text("PRAGMA table_info(attachments);")).fetchall()
-        have_kind = any((c[1] == "kind") for c in cols)  # c[1] = name
-        if not have_kind:
-            # добавляем с DEFAULT, т.к. SQLite не любит NOT NULL без дефолта
+        if not _has_column(conn, "attachments", "kind"):
             conn.execute(
-                text("ALTER TABLE attachments ADD COLUMN kind TEXT DEFAULT 'other';"))
+                text("ALTER TABLE attachments ADD COLUMN kind TEXT DEFAULT 'other';")
+            )
+
+        if not _has_column(conn, "attachments", "status"):
+            conn.execute(
+                text(
+                    "ALTER TABLE attachments ADD COLUMN status TEXT DEFAULT 'pending_review';"
+                )
+            )
+
+        if not _has_column(conn, "attachments", "reviewed_by_id"):
+            conn.execute(text("ALTER TABLE attachments ADD COLUMN reviewed_by_id INTEGER;"))
+
+        if not _has_column(conn, "attachments", "reviewed_at"):
+            conn.execute(text("ALTER TABLE attachments ADD COLUMN reviewed_at DATETIME;"))
+
+        if not _has_column(conn, "attachments", "review_comment"):
+            conn.execute(text("ALTER TABLE attachments ADD COLUMN review_comment TEXT;"))
+
+        if not _has_column(conn, "users", "is_active"):
+            conn.execute(text("ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1;"))
+
+        if not _has_column(conn, "users", "invited_at"):
+            conn.execute(text("ALTER TABLE users ADD COLUMN invited_at DATETIME;"))
+
+        if not _has_column(conn, "users", "last_login_at"):
+            conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME;"))
+
+        if not _has_column(conn, "users", "created_at"):
+            conn.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME;"))
+
+        if not _has_column(conn, "users", "updated_at"):
+            conn.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME;"))
+
+        if not _has_column(conn, "users", "invite_token"):
+            conn.execute(text("ALTER TABLE users ADD COLUMN invite_token TEXT;"))
+
+        if not _has_column(conn, "users", "reset_token"):
+            conn.execute(text("ALTER TABLE users ADD COLUMN reset_token TEXT;"))
+
+        if not _has_column(conn, "audit_logs", "branch_id"):
+            conn.execute(text("ALTER TABLE audit_logs ADD COLUMN branch_id INTEGER;"))
 
 
 def init_db():

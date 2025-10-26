@@ -1,8 +1,9 @@
 # app/schemas.py
-from pydantic import BaseModel, constr, Field, ConfigDict, field_validator
-from datetime import date
-from datetime import datetime
+from datetime import date, datetime
+from datetime import date, datetime
 from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field, constr, field_validator, EmailStr
 
 
 class LoginIn(BaseModel):
@@ -14,6 +15,39 @@ class ClientIn(BaseModel):
     full_name: str
     phone: constr(strip_whitespace=True, min_length=7)
     note: Optional[str] = None
+
+
+class UserCreate(BaseModel):
+    full_name: str
+    email: Optional[EmailStr] = None
+    phone: Optional[constr(strip_whitespace=True, min_length=5)] = None
+    role: str
+    branch_id: Optional[int] = None
+    password: Optional[constr(min_length=6)] = None
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[constr(strip_whitespace=True, min_length=5)] = None
+    role: Optional[str] = None
+    branch_id: Optional[int] = None
+    is_active: Optional[bool] = None
+    password: Optional[constr(min_length=6)] = None
+
+
+class UserOut(BaseModel):
+    id: int
+    full_name: str
+    email: Optional[str]
+    phone: Optional[str]
+    role: str
+    branch_id: Optional[int]
+    branch_name: Optional[str]
+    is_active: bool
+    invited_at: Optional[datetime]
+    last_login_at: Optional[datetime]
+    created_at: Optional[datetime]
 
 
 class PaymentIn(BaseModel):
@@ -102,3 +136,44 @@ class CommentOut(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class AttachmentReviewUpdate(BaseModel):
+    status: str = Field(pattern="^(pending_review|approved|rejected)$")
+    review_comment: Optional[str] = None
+
+
+class PasswordResetIn(BaseModel):
+    password: constr(min_length=6)
+
+
+class AuditLogOut(BaseModel):
+    id: int
+    action: str
+    entity_type: str
+    entity_id: Optional[int]
+    details: Optional[str]
+    created_at: datetime
+    user_name: Optional[str] = None
+
+
+class DashboardSummaryOut(BaseModel):
+    orders_total: int
+    orders_in_progress: int
+    orders_completed: int
+    orders_overdue: int
+    payments_sum: float
+    payments_debt: float
+    files_pending: int
+    files_rejected: int
+
+
+class DashboardTimelinePoint(BaseModel):
+    bucket: str
+    orders: int
+    payments: float
+
+
+class DashboardTopItem(BaseModel):
+    label: str
+    value: int

@@ -17,7 +17,7 @@ export default function Login() {
         try {
             const res = await api.post('/auth/login', { username, password })
             login(res.data.access_token, res.data.user)
-            nav('/orders')
+            nav('/dashboard')
         } catch (e: any) {
             setErr(e?.response?.data?.detail || 'Login xatosi')
         }

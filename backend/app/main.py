@@ -25,7 +25,7 @@ except Exception:
     CORS_ALLOW_CREDENTIALS = True
 
 # routerlar
-from app.routers import auth, clients, orders, payments, attachments
+from app.routers import auth, clients, orders, payments, attachments, users, dashboard
 # verify router ichida prefix bo‘lsa, shu holatda qoladi
 from app.routers.verify import router as verify_router
 
@@ -57,6 +57,8 @@ app.include_router(orders.router)
 app.include_router(payments.router)
 app.include_router(attachments.router)
 app.include_router(comments.router)
+app.include_router(users.router)
+app.include_router(dashboard.router)
 # verify_router ichida APIRouter(prefix="/verify") bo‘lishi kutiladi
 app.include_router(verify_router)
 
