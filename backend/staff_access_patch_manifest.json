@@ -1,7 +1,0 @@
-{
-  "backend/app/routers/orders.py": "relaxed staff restrictions",
-  "backend/app/routers/comments.py": "relaxed staff restrictions",
-  "backend/app/routers/attachments.py": "relaxed staff restrictions",
-  "backend/app/routers/dashboard.py": "dashboard guarded for staff",
-  "backend/app/deps.py": "checked (no changes)"
-}
