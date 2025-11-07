@@ -6,6 +6,7 @@ from app import models, schemas
 from app.database import get_session
 from app.deps import get_current_user, require_roles
 from app.services.audit import log_action
+from app.services import notifications as notification_service
 
 router = APIRouter(prefix="/orders/{order_id}/comments", tags=["comments"])
 
@@ -64,6 +65,24 @@ def add_comment(
     )
     db.add(c)
     db.flush()
+
+    notif: models.Notification | None = None
+    if order.manager_id:
+        author_name = c.author or current_user.full_name
+        message = f"New comment on order #{order.id} by {author_name}"
+        payload = {
+            "order_id": order.id,
+            "comment_id": c.id,
+            "author": author_name,
+        }
+        notif = notification_service.create_notification(
+            db,
+            user_id=order.manager_id,
+            kind=models.NotificationKind.comment_added,
+            message=message,
+            order_id=order.id,
+            payload=payload,
+        )
     log_action(
         db,
         user=current_user,
@@ -75,6 +94,10 @@ def add_comment(
     )
     db.commit()
     db.refresh(c)
+
+    if notif:
+        db.refresh(notif)
+        notification_service.queue_delivery(notif)
     return c
 
 

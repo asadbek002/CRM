@@ -46,12 +46,34 @@ UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 UPLOAD_DIR = (BACKEND_ROOT / UPLOAD_DIR).resolve()  # Path
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+# Базовая директория для вложений заказов
+ATTACHMENTS_ROOT = (BACKEND_ROOT / "storage" / "attachments").resolve()
+ATTACHMENTS_ROOT.mkdir(parents=True, exist_ok=True)
+
 # Ограничения и утилиты для файлов
-MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "15"))
-_allowed_mime = _get_list(
-    "ALLOWED_MIME", "application/pdf,image/png,image/jpeg")
+MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "50"))
+_default_mime = (
+    "application/pdf,"
+    "application/msword,"
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+    "application/vnd.ms-excel,"
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+    "text/csv,"
+    "image/jpeg,"
+    "image/png,"
+    "image/webp,"
+    "application/zip,"
+    "application/x-rar-compressed,"
+    "application/x-7z-compressed"
+)
+_allowed_mime = _get_list("ALLOWED_MIME", _default_mime)
 ALLOWED_MIME: Set[str] = set(_allowed_mime)
-ALLOWED_EXT: Set[str] = set(_get_list("ALLOWED_EXT", "pdf,png,jpg,jpeg"))
+ALLOWED_EXT: Set[str] = set(
+    _get_list(
+        "ALLOWED_EXT",
+        "pdf,doc,docx,xls,xlsx,csv,jpg,jpeg,png,webp,zip,rar,7z",
+    )
+)
 SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 

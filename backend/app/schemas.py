@@ -1,7 +1,7 @@
 # app/schemas.py
 from datetime import date, datetime
-from datetime import date, datetime
-from typing import Optional
+from enum import Enum
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, constr, field_validator, EmailStr
 
@@ -71,6 +71,23 @@ class OrderIn(BaseModel):
     payment_method: Optional[str] = None
     deadline: Optional[date] = None
     total_amount: float = 0
+    notes: Optional[str] = None
+
+
+class OrderUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    branch_id: Optional[int] = None
+    manager_id: Optional[int] = Field(default=None, validation_alias="staff_id")
+    status: Optional[str] = None
+    customer_type: Optional[str] = None
+    doc_type: Optional[str] = None
+    country: Optional[str] = None
+    payment_method: Optional[str] = None
+    deadline: Optional[date] = None
+    total_amount: Optional[float] = None
+    paid_amount: Optional[float] = None
+    payment_state: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -177,3 +194,28 @@ class DashboardTimelinePoint(BaseModel):
 class DashboardTopItem(BaseModel):
     label: str
     value: int
+
+
+class NotificationKind(str, Enum):
+    file_uploaded = "file_uploaded"
+    comment_added = "comment_added"
+    deadline_due = "deadline_due"
+
+
+class NotificationOut(BaseModel):
+    id: int
+    user_id: int
+    order_id: Optional[int]
+    kind: NotificationKind
+    message: str
+    payload: Optional[dict[str, Any]] = None
+    is_read: bool
+    created_at: datetime
+    read_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+class NotificationsMarkReadResponse(BaseModel):
+    updated: int

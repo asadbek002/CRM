@@ -1,21 +1,17 @@
 // frontend/src/pages/NewOrder.tsx
-import React, { useState, FormEvent } from 'react'
-import api from '../api'
+import React, { useEffect, useState, FormEvent } from 'react'
+import api, { fetchDashboardFilters } from '../api'
 import { useNavigate, Link } from 'react-router-dom'
+import { useAuth } from '../auth'
 
 type Staff = { id: number; full_name: string }
-
-// faqat shu ikki hodimni tanlash
-const staffList: Staff[] = [
-    { id: 2, full_name: 'Shukrullo' },
-    { id: 3, full_name: 'Olimjon' },
-]
 
 type CustomerType = 'office' | 'sns' | 'consulting'
 type PayMethod = 'naqd' | 'plastik' | 'payme' | 'terminal'
 
 export default function NewOrder() {
     const nav = useNavigate()
+    const { user } = useAuth()
 
     const [clientName, setClientName] = useState('')
     const [clientPhone, setClientPhone] = useState('')
@@ -29,9 +25,59 @@ export default function NewOrder() {
     const [payMethod, setPayMethod] = useState<PayMethod>('naqd')
 
     // hodim tanlash
-    const [staffId, setStaffId] = useState<number | ''>('')
+    const [staffId, setStaffId] = useState<number | ''>(() =>
+        user?.role === 'staff' ? user.id : ''
+    )
+    const [staffList, setStaffList] = useState<Staff[]>([])
 
     const [saving, setSaving] = useState(false)
+
+    useEffect(() => {
+        if (!user) {
+            setStaffId('')
+            setStaffList([])
+            return
+        }
+
+        if (user.role === 'staff') {
+            setStaffId(user.id)
+            setStaffList([{ id: user.id, full_name: user.name }])
+            return
+        }
+
+        let cancelled = false
+
+        async function loadStaff() {
+            try {
+                const filters = await fetchDashboardFilters()
+                if (cancelled) return
+
+                const options: Staff[] = filters.managers
+                    .filter(m => m.role === 'staff' || m.role === 'manager')
+                    .map(m => ({ id: m.id, full_name: m.name }))
+
+                if (user?.name && !options.some(opt => opt.id === user.id)) {
+                    options.unshift({ id: user.id, full_name: user.name })
+                }
+
+                setStaffList(options)
+            } catch (err) {
+                console.error('Failed to load staff list', err)
+                if (cancelled) return
+
+                if (user?.name) {
+                    setStaffList([{ id: user.id, full_name: user.name }])
+                } else {
+                    setStaffList([])
+                }
+            }
+        }
+
+        loadStaff()
+        return () => {
+            cancelled = true
+        }
+    }, [user])
 
     async function onSubmit(e: FormEvent) {
         e.preventDefault()
@@ -51,6 +97,9 @@ export default function NewOrder() {
             const client_id = Number(c.data.id)
 
             // 2) Buyurtma yaratish (MUHIM: manager_id!)
+            const resolvedStaffId =
+                staffId === '' ? user?.id ?? null : Number(staffId)
+
             const payload = {
                 client_id,
                 customer_type: customerType,
@@ -60,7 +109,7 @@ export default function NewOrder() {
                 payment_method: payMethod,
                 deadline: deadline || null,
                 total_amount: Number(total) || 0,
-                manager_id: staffId === '' ? null : Number(staffId), // ✅ backendga mos nom
+                manager_id: resolvedStaffId ?? null, // ✅ backendga mos nom
             }
 
             const res = await api.post('/orders', payload)
@@ -160,22 +209,30 @@ export default function NewOrder() {
                         </Field>
 
                         <Field label="Hodim">
-                            <select
-                                className="inp"
-                                value={staffId === '' ? '' : String(staffId)}
-                                onChange={(e) =>
-                                    e.target.value === ''
-                                        ? setStaffId('')
-                                        : setStaffId(Number(e.target.value))
-                                }
-                            >
-                                <option value="">— tanlang —</option>
-                                {staffList.map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                        {s.full_name}
-                                    </option>
-                                ))}
-                            </select>
+                            {user?.role === 'staff' ? (
+                                <input
+                                    className="inp bg-gray-100"
+                                    value={user?.name ?? ''}
+                                    readOnly
+                                />
+                            ) : (
+                                <select
+                                    className="inp"
+                                    value={staffId === '' ? '' : String(staffId)}
+                                    onChange={(e) =>
+                                        e.target.value === ''
+                                            ? setStaffId('')
+                                            : setStaffId(Number(e.target.value))
+                                    }
+                                >
+                                    <option value="">— tanlang —</option>
+                                    {staffList.map((s) => (
+                                        <option key={s.id} value={s.id}>
+                                            {s.full_name}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
                         </Field>
 
                         <Field label="Davlat">

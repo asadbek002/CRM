@@ -13,6 +13,24 @@ type Attachment = {
 
 const KIND_ORDER: AttachmentKind[] = ['translation', 'apostille', 'notary']
 
+const ACCEPTED_EXTENSIONS = [
+    'pdf',
+    'doc',
+    'docx',
+    'xls',
+    'xlsx',
+    'csv',
+    'jpg',
+    'jpeg',
+    'png',
+    'webp',
+    'zip',
+    'rar',
+    '7z',
+]
+const ACCEPT_ATTR = ACCEPTED_EXTENSIONS.map(ext => `.${ext}`).join(',')
+const MAX_UPLOAD_SIZE = 50 * 1024 * 1024
+
 const KIND_LABELS: Record<AttachmentKind, string> = {
     translation: 'Hujjatlar Tarjimasi',
     apostille: 'Apostillar',
@@ -91,8 +109,21 @@ export default function Upload() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id])
 
+    const isAllowedExtension = (name: string) => {
+        const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : ''
+        return ACCEPTED_EXTENSIONS.includes(ext)
+    }
+
     const handleFileChange = (kind: AttachmentKind, files: FileList | null) => {
         const file = files?.[0] || null
+        if (file && !isAllowedExtension(file.name)) {
+            setMessages(prev => ({ ...prev, [kind]: 'Fayl formati qo‘llab-quvvatlanmaydi' }))
+            setSelected(prev => ({ ...prev, [kind]: null }))
+            if (fileRefs.current[kind]) {
+                fileRefs.current[kind]!.value = ''
+            }
+            return
+        }
         setSelected(prev => ({ ...prev, [kind]: file }))
         setMessages(prev => ({ ...prev, [kind]: null }))
     }
@@ -102,6 +133,14 @@ export default function Upload() {
         const file = selected[kind]
         if (!file) {
             setMessages(prev => ({ ...prev, [kind]: 'Fayl tanlang' }))
+            return
+        }
+        if (!isAllowedExtension(file.name)) {
+            setMessages(prev => ({ ...prev, [kind]: 'Fayl formati qo‘llab-quvvatlanmaydi' }))
+            return
+        }
+        if (file.size > MAX_UPLOAD_SIZE) {
+            setMessages(prev => ({ ...prev, [kind]: 'Fayl hajmi 50 MB dan oshmasin' }))
             return
         }
         const fd = new FormData()
@@ -200,7 +239,7 @@ export default function Upload() {
                                     fileRefs.current[kind] = el
                                 }}
                                 type="file"
-                                accept=".pdf,.jpg,.jpeg,.png"
+                                accept={ACCEPT_ATTR}
                                 onChange={e => handleFileChange(kind, e.target.files)}
                             />
                             <button

@@ -28,9 +28,22 @@ except Exception:
     CORS_ALLOW_CREDENTIALS = True
 
 # routerlar
-from app.routers import auth, clients, orders, payments, attachments, users, dashboard
+from app.routers import (
+    auth,
+    clients,
+    orders,
+    payments,
+    attachments,
+    users,
+    dashboard,
+    notifications,
+)
 # verify router ichida prefix bo‘lsa, shu holatda qoladi
 from app.routers.verify import router as verify_router
+from app.services.notifications import (
+    shutdown_notifications,
+    startup_notifications,
+)
 
 app = FastAPI(title="Lingua CRM API", version="1.0.0")
 
@@ -62,6 +75,7 @@ app.include_router(attachments.router)
 app.include_router(comments.router)
 app.include_router(users.router)
 app.include_router(dashboard.router)
+app.include_router(notifications.router)
 app.include_router(verify.router, prefix=API_PREFIX)
 # verify_router ichida APIRouter(prefix="/verify") bo‘lishi kutiladi
 app.include_router(verify_router)
@@ -87,3 +101,13 @@ def root():
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.on_event("startup")
+async def _notifications_startup() -> None:
+    await startup_notifications()
+
+
+@app.on_event("shutdown")
+async def _notifications_shutdown() -> None:
+    await shutdown_notifications()

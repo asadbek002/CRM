@@ -124,6 +124,86 @@ export async function deleteComment(
     await api.delete(`/orders/${orderId}/comments/${commentId}`)
 }
 
+// ===================== ORDERS API =====================
+
+export interface OrderDetailAttachment {
+    id: number
+    display_name: string
+    mime: string | null
+    size: number
+    created_at: string | null
+    status?: string | null
+    review_comment?: string | null
+}
+
+export interface OrderDetailPayment {
+    id: number
+    amount: number
+    method: string | null
+    paid_at: string | null
+    note: string | null
+}
+
+export interface OrderDetail {
+    id: number
+    client_name: string | null
+    client_phone: string | null
+    created_at: string | null
+    payment_status: string | null
+    payment_state: string | null
+    customer_type: string | null
+    doc_type: string | null
+    country: string | null
+    branch_id: number | null
+    branch: string | null
+    manager_id: number | null
+    manager: string | null
+    deadline: string | null
+    total_amount: number | null
+    paid_sum: number | null
+    balance: number | null
+    payment_method: string | null
+    status: string | null
+    notes: string | null
+    attachments: OrderDetailAttachment[]
+    payments: OrderDetailPayment[]
+}
+
+export async function fetchOrderDetail(orderId: number) {
+    const { data } = await api.get<OrderDetail>(`/orders/${orderId}`)
+    return data
+}
+
+// ===================== NOTIFICATIONS API =====================
+
+export type NotificationKind = 'file_uploaded' | 'comment_added' | 'deadline_due'
+
+export interface NotificationItem {
+    id: number
+    user_id: number
+    order_id: number | null
+    kind: NotificationKind
+    message: string
+    payload?: Record<string, unknown> | null
+    is_read: boolean
+    created_at: string
+    read_at?: string | null
+}
+
+export async function fetchNotifications(limit = 50) {
+    const { data } = await api.get<NotificationItem[]>(`/api/notifications`, {
+        params: { limit },
+    })
+    return data
+}
+
+export async function markNotificationsRead() {
+    const { data } = await api.post<{ updated: number }>(
+        `/api/notifications/mark-read`
+    )
+    return data
+}
+
 // ===================== ATTACHMENTS API =====================
 
 export type AttachmentKind = 'translation' | 'apostille' | 'notary'

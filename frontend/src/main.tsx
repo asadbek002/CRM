@@ -23,6 +23,9 @@ import OrderVerify from './pages/OrderVerify'
 import Stats from './pages/Stats'
 import Dashboard from './pages/Dashboard'
 import Employees from './pages/Employees'
+import NotificationsBell from './components/NotificationsBell'
+import { NotificationProvider } from './notifications'
+import OrderDetails from './pages/OrderDetails'
 
 const qc = new QueryClient()
 
@@ -42,8 +45,10 @@ function Header() {
 
                 {token && (
                     <>
-                        {/* Dashboard — скрыт для staff */}
-                        {user?.role !== 'staff' && <Link to="/dashboard">Dashboard</Link>}
+                        {/* Dashboard — faqat admin va manager uchun */}
+                        {(user?.role === 'admin' || user?.role === 'manager') && (
+                            <Link to="/dashboard">Dashboard</Link>
+                        )}
 
                         <Link to="/orders">Buyurtmalar</Link>
                         <Link to="/orders/new">Yangi buyurtma</Link>
@@ -56,6 +61,7 @@ function Header() {
             </div>
 
             <div className="flex items-center gap-3">
+                {token && <NotificationsBell />}
                 {!token ? (
                     <Link
                         to="/login"
@@ -95,18 +101,12 @@ function RequireRole({ roles, children }: { roles: string[]; children: JSX.Eleme
     return children
 }
 
-/* Запрет только для staff (удобно для /dashboard) */
-function RequireNotStaff({ children }: { children: JSX.Element }) {
-    const { user } = useAuth()
-    if (user?.role === 'staff') return <Navigate to="/orders" replace />
-    return children
-}
-
-/* Домашний редирект: staff → /orders, остальные → /dashboard */
+/* Домашний редирект: admin/manager → /dashboard, boshqalar → /orders */
 function HomeRedirect() {
     const { user } = useAuth()
     if (!user) return <Navigate to="/login" replace />
-    return <Navigate to={user.role === 'staff' ? '/orders' : '/dashboard'} replace />
+    const isManagerLike = user.role === 'admin' || user.role === 'manager'
+    return <Navigate to={isManagerLike ? '/dashboard' : '/orders'} replace />
 }
 
 function App() {
@@ -162,6 +162,16 @@ function App() {
                 }
             />
             <Route
+                path="/orders/:id"
+                element={
+                    <RequireAuth>
+                        <Layout>
+                            <OrderDetails />
+                        </Layout>
+                    </RequireAuth>
+                }
+            />
+            <Route
                 path="/orders/:id/verify"
                 element={
                     <RequireAuth>
@@ -197,11 +207,11 @@ function App() {
                 path="/dashboard"
                 element={
                     <RequireAuth>
-                        <RequireNotStaff>
+                        <RequireRole roles={['admin', 'manager']}>
                             <Layout>
                                 <Dashboard />
                             </Layout>
-                        </RequireNotStaff>
+                        </RequireRole>
                     </RequireAuth>
                 }
             />
@@ -239,7 +249,9 @@ createRoot(document.getElementById('root')!).render(
         <QueryClientProvider client={qc}>
             <AuthProvider>
                 <BrowserRouter>
-                    <App />
+                    <NotificationProvider>
+                        <App />
+                    </NotificationProvider>
                 </BrowserRouter>
             </AuthProvider>
         </QueryClientProvider>

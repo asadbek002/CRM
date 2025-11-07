@@ -73,6 +73,12 @@ class AttachmentStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class NotificationKind(str, enum.Enum):
+    file_uploaded = "file_uploaded"
+    comment_added = "comment_added"
+    deadline_due = "deadline_due"
+
+
 # ---------------- Entities ----------------
 
 
@@ -266,3 +272,19 @@ class VerifiedDoc(Base):
 
     is_active = Column(Boolean, default=True)
     qr_filename = Column(String, nullable=True)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(ForeignKey("users.id"), nullable=False, index=True)
+    user = relationship("User")
+    order_id = Column(ForeignKey("orders.id"), nullable=True)
+    order = relationship("Order")
+    kind = Column(Enum(NotificationKind), nullable=False)
+    message = Column(String, nullable=False)
+    payload = Column(Text, nullable=True)
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    read_at = Column(DateTime, nullable=True)
