@@ -1,6 +1,7 @@
 ﻿# app/routers/attachments.py
 import mimetypes
 import os
+from pathlib import Path
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -8,7 +9,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.config import UPLOAD_DIR
+from app.config import ATTACHMENTS_ROOT, UPLOAD_DIR
 from app.database import get_session
 from app.deps import get_current_user, require_roles
 from app.services.audit import log_action
@@ -51,9 +52,17 @@ def download_attachment(
     att = _ensure_attachment_access(att, current_user)
 
     stored_name = os.path.basename(att.filename or "")
-    path = os.path.join(UPLOAD_DIR, stored_name)
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="File missing")
+    order_id = att.order_id
+    if not order_id:
+        raise HTTPException(status_code=404, detail="Attachment order missing")
+
+    path = ATTACHMENTS_ROOT / str(order_id) / stored_name
+    if not path.exists():
+        legacy_path = Path(UPLOAD_DIR) / stored_name
+        if legacy_path.exists():
+            path = legacy_path
+        else:
+            raise HTTPException(status_code=404, detail="File missing")
 
     media_type = att.mime or (mimetypes.guess_type(stored_name)[0] or "application/octet-stream")
     return FileResponse(
@@ -75,10 +84,21 @@ def delete_attachment(
     att = _ensure_attachment_access(att, current_user)
 
     stored_name = os.path.basename(att.filename or "")
-    path = os.path.join(UPLOAD_DIR, stored_name)
+    order_id = att.order_id
+    order_dir = ATTACHMENTS_ROOT / str(order_id) if order_id else ATTACHMENTS_ROOT
+    path = order_dir / stored_name
+    legacy_path = Path(UPLOAD_DIR) / stored_name
     try:
-        if os.path.exists(path):
-            os.remove(path)
+        if path.exists():
+            path.unlink()
+        if legacy_path.exists():
+            legacy_path.unlink()
+        if order_id:
+            try:
+                if order_dir.exists() and not any(order_dir.iterdir()):
+                    order_dir.rmdir()
+            except OSError:
+                pass
     finally:
         log_action(
             db,

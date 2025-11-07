@@ -74,6 +74,23 @@ class OrderIn(BaseModel):
     notes: Optional[str] = None
 
 
+class OrderUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    branch_id: Optional[int] = None
+    manager_id: Optional[int] = Field(default=None, validation_alias="staff_id")
+    status: Optional[str] = None
+    customer_type: Optional[str] = None
+    doc_type: Optional[str] = None
+    country: Optional[str] = None
+    payment_method: Optional[str] = None
+    deadline: Optional[date] = None
+    total_amount: Optional[float] = None
+    paid_amount: Optional[float] = None
+    payment_state: Optional[str] = None
+    notes: Optional[str] = None
+
+
 # -------------------------------
 # QR/Verified Document schemas
 # -------------------------------

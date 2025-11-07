@@ -2,6 +2,7 @@
 # app/routers/orders.py
 from datetime import date, datetime, timedelta
 from collections import defaultdict
+import mimetypes
 import os
 from uuid import uuid4
 from typing import Optional
@@ -24,7 +25,7 @@ from app.deps import ensure_branch_scope, get_current_user, require_roles
 from app.services.audit import log_action
 from pydantic import BaseModel, constr
 from app.config import (
-    UPLOAD_DIR,
+    ATTACHMENTS_ROOT,
     ALLOWED_MIME,
     ALLOWED_EXT,
     MAX_UPLOAD_MB,
@@ -32,6 +33,13 @@ from app.config import (
 )
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+mimetypes.add_type("application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx")
+mimetypes.add_type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx")
+mimetypes.add_type("application/x-rar-compressed", ".rar")
+mimetypes.add_type("application/x-7z-compressed", ".7z")
+mimetypes.add_type("application/msword", ".doc")
+mimetypes.add_type("application/vnd.ms-excel", ".xls")
 
 PAYMENT_STATE_LABELS = {
     "UNPAID": "to'lanmagan",
@@ -305,7 +313,9 @@ def get_order(
         "customer_type": getattr(o.customer_type, "value", None),
         "doc_type": o.doc_type,
         "country": o.country,
+        "branch_id": o.branch_id,
         "branch": o.branch.name if o.branch else None,
+        "manager_id": o.manager_id,
         "manager": o.manager.full_name if o.manager else None,
         "deadline": o.deadline.strftime("%Y-%m-%d") if o.deadline else None,
         "total_amount": order_total,
@@ -313,6 +323,7 @@ def get_order(
         "balance": balance,
         "payment_method": getattr(o.payment_method, "value", None),
         "status": getattr(o.status, "value", o.status),
+        "notes": o.notes,
         "attachments": [
             {
                 "id": a.id,
@@ -373,6 +384,123 @@ def create_order(
     db.commit()
     db.refresh(o)
     return {"id": o.id}
+
+
+@router.patch("/{order_id:int}")
+def update_order(
+    order_id: int,
+    payload: schemas.OrderUpdate,
+    db: Session = Depends(get_session),
+    current_user: models.User = Depends(
+        require_roles(models.Role.admin, models.Role.manager, models.Role.staff)
+    ),
+):
+    o = db.get(models.Order, order_id)
+    o = _ensure_can_view(o, current_user)
+    _ensure_can_manage(o, current_user)
+
+    data = payload.model_dump(exclude_unset=True)
+    if not data:
+        return get_order(order_id, db, current_user)
+
+    changed_fields: list[str] = []
+
+    def assign(field: str, value) -> None:
+        if getattr(o, field) != value:
+            setattr(o, field, value)
+            changed_fields.append(field)
+
+    if "branch_id" in data:
+        branch_id = data.pop("branch_id")
+        if branch_id is not None:
+            branch_id = ensure_branch_scope(current_user, branch_id)
+        assign("branch_id", branch_id)
+
+    if "manager_id" in data:
+        assign("manager_id", data.pop("manager_id"))
+
+    if "status" in data:
+        raw_status = data.pop("status")
+        if raw_status:
+            try:
+                assign("status", models.OrderStatus(raw_status))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid status")
+
+    if "customer_type" in data:
+        raw_customer = data.pop("customer_type")
+        value = None
+        if raw_customer:
+            try:
+                value = models.CustomerType(raw_customer)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid customer type")
+        assign("customer_type", value)
+
+    if "doc_type" in data:
+        assign("doc_type", data.pop("doc_type"))
+
+    if "country" in data:
+        assign("country", data.pop("country"))
+
+    if "payment_method" in data:
+        raw_method = data.pop("payment_method")
+        if raw_method:
+            normalized = raw_method.strip().lower()
+            try:
+                method_enum = models.PayMethod(normalized)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid payment method")
+            assign("payment_method", method_enum)
+        else:
+            assign("payment_method", None)
+
+    if "deadline" in data:
+        assign("deadline", data.pop("deadline"))
+
+    if "total_amount" in data:
+        total_val = data.pop("total_amount")
+        assign("total_amount", float(total_val) if total_val is not None else None)
+
+    if "paid_amount" in data:
+        paid_val = data.pop("paid_amount")
+        assign("paid_amount", float(paid_val) if paid_val is not None else None)
+
+    if "payment_state" in data:
+        raw_state = data.pop("payment_state")
+        state_value = None
+        if raw_state:
+            normalized = raw_state.strip().upper()
+            try:
+                state_value = models.PaymentState[normalized]
+            except (KeyError, AttributeError):
+                try:
+                    state_value = models.PaymentState(raw_state)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid payment state")
+        assign("payment_state", state_value)
+
+    if "notes" in data:
+        assign("notes", data.pop("notes"))
+
+    if data:
+        for field, value in data.items():
+            assign(field, value)
+
+    if changed_fields:
+        log_action(
+            db,
+            user=current_user,
+            action="order.update",
+            entity_type="order",
+            entity_id=o.id,
+            branch_id=o.branch_id,
+            extra={"fields": sorted(set(changed_fields))},
+        )
+
+    db.commit()
+    db.refresh(o)
+    return get_order(order_id, db, current_user)
 
 
 @router.get("/{order_id}/attachments")
@@ -438,23 +566,32 @@ def upload_for_order(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid attachment kind")
 
-    if ALLOWED_MIME and upload.content_type not in ALLOWED_MIME:
-        raise HTTPException(status_code=400, detail="File type not allowed")
-
     ext = ""
     if upload.filename and "." in upload.filename:
         ext = upload.filename.rsplit(".", 1)[-1].lower()
+
     if ALLOWED_EXT and ext not in ALLOWED_EXT:
         raise HTTPException(status_code=400, detail="File extension not allowed")
+
+    incoming_mime = (upload.content_type or "").lower()
+    detected_mime = incoming_mime
+    if ALLOWED_MIME:
+        if incoming_mime not in ALLOWED_MIME:
+            guessed = mimetypes.guess_type(upload.filename or "")[0]
+            if guessed and guessed in ALLOWED_MIME:
+                detected_mime = guessed
+            else:
+                raise HTTPException(status_code=400, detail="File type not allowed")
 
     data = upload.file.read()
     if MAX_UPLOAD_MB and len(data) > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large")
 
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    order_dir = ATTACHMENTS_ROOT / str(o.id)
+    order_dir.mkdir(parents=True, exist_ok=True)
     safe_orig = sanitize_filename(upload.filename or "file")
     stored_name = f"{uuid4().hex}.{ext or 'bin'}"
-    path = os.path.join(UPLOAD_DIR, stored_name)
+    path = order_dir / stored_name
     with open(path, "wb") as out:
         out.write(data)
 
@@ -464,7 +601,7 @@ def upload_for_order(
         status=models.AttachmentStatus.pending_review,
         filename=stored_name,
         original_name=safe_orig,
-        mime=upload.content_type,
+        mime=detected_mime or upload.content_type,
         size=len(data),
         uploaded_by_id=current_user.id,
     )
@@ -595,7 +732,7 @@ def delete_order(
     order_id: int,
     db: Session = Depends(get_session),
     current_user: models.User = Depends(
-        require_roles(models.Role.admin, models.Role.manager, models.Role.staff)
+        require_roles(models.Role.admin, models.Role.manager)
     ),
 ):
     o = db.get(models.Order, order_id)

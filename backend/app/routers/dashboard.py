@@ -4,17 +4,21 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from typing import Dict, Iterable, List, Optional
 
-from fastapi import APIRouter, Depends
-from app.deps import require_roles, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from app.deps import require_roles
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_session
 from app.deps import ensure_branch_scope, get_current_user
-AllowedRoles = ("admin", "manager", "accountant")
+AllowedRoles = ("admin", "manager")
 
-router = APIRouter(dependencies=[Depends(require_roles("admin","manager","accountant"))], prefix="/dashboard", tags=["dashboard"])
+router = APIRouter(
+    dependencies=[Depends(require_roles(*AllowedRoles))],
+    prefix="/dashboard",
+    tags=["dashboard"],
+)
 
 
 def _apply_scope(

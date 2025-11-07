@@ -4,6 +4,8 @@ import api from '../api'
 import PaymentStateSelect from '../components/PaymentStateSelect'
 import OrderStatusSelect from '../components/OrderStatusSelect'
 import OrderDrawer from '../components/OrderDrawer'
+import OrderEditModal from '../components/OrderEditModal'
+import { useAuth } from '../auth'
 
 type PaymentState = 'UNPAID' | 'PARTIAL' | 'PAID'
 
@@ -27,7 +29,7 @@ type Row = {
     status: string
 }
 
-const METHODS = ['naqd', 'terminal', "o`tkazma", 'payme'] as const
+const METHODS = ['naqd', 'terminal', "o`tkazma", 'payme', 'bank'] as const
 type Method = typeof METHODS[number]
 
 type NormalizedOrderStatus = 'not_started' | 'in_progress' | 'completed'
@@ -62,6 +64,12 @@ export default function Orders() {
     const [dateFilter, setDateFilter] = useState<string>('') // '' => все
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
     const [drawerOrder, setDrawerOrder] = useState<Row | null>(null)
+    const [editingOrder, setEditingOrder] = useState<Row | null>(null)
+    const [editingId, setEditingId] = useState<number | null>(null)
+    const { user } = useAuth()
+
+    const canDelete = user?.role === 'admin' || user?.role === 'manager'
+    const canEdit = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'staff'
 
     const normalizeState = (row: Row): PaymentState => {
         const state = row.payment_state
@@ -136,10 +144,30 @@ export default function Orders() {
     }, [editPaid, editMethod, load])
 
     const delOrder = useCallback(async (id: number) => {
+        if (!canDelete) return
         if (!confirm('O‘chirishni tasdiqlaysizmi?')) return
         await api.delete(`/orders/${id}`)
         await load()
-    }, [load])
+    }, [canDelete, load])
+
+    const openEdit = useCallback((row: Row) => {
+        if (!canEdit) return
+        setEditingOrder(row)
+        setEditingId(row.id)
+    }, [canEdit])
+
+    const closeEdit = useCallback(() => {
+        setEditingOrder(null)
+        setEditingId(null)
+    }, [])
+
+    const handleSaved = useCallback(async () => {
+        try {
+            await load()
+        } finally {
+            closeEdit()
+        }
+    }, [load, closeEdit])
 
     const statusCounts = useMemo(() => {
         return rows.reduce(
@@ -345,9 +373,21 @@ export default function Orders() {
                                     </td>
 
                                     <td className="px-4 py-3">
-                                        <button className="underline text-red-600" onClick={() => delOrder(r.id)}>
-                                            O‘chirish
-                                        </button>
+                                        <div className="flex items-center gap-3">
+                                            {canEdit && (
+                                                <button
+                                                    className="underline text-blue-600"
+                                                    onClick={() => openEdit(r)}
+                                                >
+                                                    Tahrirlash
+                                                </button>
+                                            )}
+                                            {canDelete && (
+                                                <button className="underline text-red-600" onClick={() => delOrder(r.id)}>
+                                                    O‘chirish
+                                                </button>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             )
@@ -361,6 +401,15 @@ export default function Orders() {
                     order={drawerOrder}
                     open={!!drawerOrder}
                     onClose={() => setDrawerOrder(null)}
+                />
+            )}
+            {editingId && (
+                <OrderEditModal
+                    orderId={editingId}
+                    open={editingId !== null}
+                    summary={editingOrder}
+                    onClose={closeEdit}
+                    onSaved={handleSaved}
                 />
             )}
         </div>
