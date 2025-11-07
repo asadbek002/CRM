@@ -1,7 +1,7 @@
 # app/schemas.py
 from datetime import date, datetime
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, constr, field_validator, EmailStr
 
@@ -136,6 +136,22 @@ class CommentOut(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class NotificationOut(BaseModel):
+    id: int
+    type: str
+    title: str
+    message: str | None = None
+    created_at: Optional[datetime] = None
+    is_read: bool
+    order_id: Optional[int] = None
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class NotificationListOut(BaseModel):
+    items: list[NotificationOut]
+    unread: int
 
 
 class AttachmentReviewUpdate(BaseModel):

@@ -23,6 +23,8 @@ import OrderVerify from './pages/OrderVerify'
 import Stats from './pages/Stats'
 import Dashboard from './pages/Dashboard'
 import Employees from './pages/Employees'
+import NotificationBell from './components/NotificationBell'
+import { NotificationsProvider } from './notifications'
 
 const qc = new QueryClient()
 
@@ -65,6 +67,7 @@ function Header() {
                     </Link>
                 ) : (
                     <>
+                        <NotificationBell />
                         <span className="text-sm text-gray-600">
                             {user?.name} ({user?.role})
                         </span>
@@ -238,9 +241,11 @@ createRoot(document.getElementById('root')!).render(
     <StrictMode>
         <QueryClientProvider client={qc}>
             <AuthProvider>
-                <BrowserRouter>
-                    <App />
-                </BrowserRouter>
+                <NotificationsProvider>
+                    <BrowserRouter>
+                        <App />
+                    </BrowserRouter>
+                </NotificationsProvider>
             </AuthProvider>
         </QueryClientProvider>
     </StrictMode>

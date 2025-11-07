@@ -6,6 +6,7 @@ from app import models, schemas
 from app.database import get_session
 from app.deps import get_current_user, require_roles
 from app.services.audit import log_action
+from app.services import notifications as notification_service
 
 router = APIRouter(prefix="/orders/{order_id}/comments", tags=["comments"])
 
@@ -73,8 +74,41 @@ def add_comment(
         branch_id=order.branch_id,
         extra={"order_id": order.id},
     )
+    notifications_to_dispatch: list[models.Notification] = []
+    if order.manager_id:
+        commenter_name = (
+            payload.author
+            or current_user.full_name
+            or current_user.email
+            or current_user.phone
+            or "Foydalanuvchi"
+        )
+        snippet = c.text.strip()
+        if len(snippet) > 140:
+            snippet = snippet[:137] + "..."
+
+        notifications_to_dispatch.append(
+            notification_service.queue_notification(
+                db,
+                user_id=order.manager_id,
+                notif_type=models.NotificationType.comment_added,
+                title="Yangi izoh qo'shildi",
+                message=(
+                    f"{commenter_name} buyurtma #{order.id} uchun izoh qoldirdi."
+                ),
+                order=order,
+                payload={
+                    "order_id": order.id,
+                    "comment_id": c.id,
+                    "author": c.author,
+                    "snippet": snippet,
+                },
+            )
+        )
+
     db.commit()
     db.refresh(c)
+    notification_service.dispatch_notifications(db, notifications_to_dispatch)
     return c
 
 
