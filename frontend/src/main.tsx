@@ -25,6 +25,7 @@ import Dashboard from './pages/Dashboard'
 import Employees from './pages/Employees'
 import NotificationsBell from './components/NotificationsBell'
 import { NotificationProvider } from './notifications'
+import OrderDetails from './pages/OrderDetails'
 
 const qc = new QueryClient()
 
@@ -161,6 +162,16 @@ function App() {
                 }
             />
             <Route
+                path="/orders/:id"
+                element={
+                    <RequireAuth>
+                        <Layout>
+                            <OrderDetails />
+                        </Layout>
+                    </RequireAuth>
+                }
+            />
+            <Route
                 path="/orders/:id/verify"
                 element={
                     <RequireAuth>
@@ -237,11 +248,11 @@ createRoot(document.getElementById('root')!).render(
     <StrictMode>
         <QueryClientProvider client={qc}>
             <AuthProvider>
-                <NotificationProvider>
-                    <BrowserRouter>
+                <BrowserRouter>
+                    <NotificationProvider>
                         <App />
-                    </BrowserRouter>
-                </NotificationProvider>
+                    </NotificationProvider>
+                </BrowserRouter>
             </AuthProvider>
         </QueryClientProvider>
     </StrictMode>

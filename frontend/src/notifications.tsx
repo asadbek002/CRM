@@ -1,7 +1,17 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { baseURL, fetchNotifications, markNotificationsRead, NotificationItem } from './api'
 import { useAuth } from './auth'
+import { orderDetailsPath } from '@/routes'
 
 interface NotificationsContextValue {
     notifications: NotificationItem[]
@@ -27,6 +37,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const retryRef = useRef<number | null>(null)
     const sourceRef = useRef<EventSource | null>(null)
     const mountedRef = useRef(true)
+    const navigate = useNavigate()
 
     useEffect(() => {
         return () => {
@@ -74,6 +85,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             setToasts((prev) => prev.filter((item) => item.id !== entry.id))
         }, 6000)
     }, [])
+
+    const goToOrderFromToast = useCallback(
+        (orderId: number, toastId: number) => {
+            navigate(orderDetailsPath(orderId))
+            setToasts((prev) => prev.filter((item) => item.id !== toastId))
+        },
+        [navigate]
+    )
 
     useEffect(() => {
         if (!token) {
@@ -181,6 +200,15 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                             {notification.kind.replace(/_/g, ' ')}
                         </div>
                         <div className="text-sm leading-snug">{notification.message}</div>
+                        {notification.order_id ? (
+                            <button
+                                type="button"
+                                className="mt-3 text-xs font-semibold text-blue-200 hover:text-white underline"
+                                onClick={() => goToOrderFromToast(notification.order_id as number, id)}
+                            >
+                                Go to order
+                            </button>
+                        ) : null}
                     </div>
                 ))}
             </div>

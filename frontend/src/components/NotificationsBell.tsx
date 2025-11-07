@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { useNotifications } from '../notifications'
+import { orderDetailsPath } from '@/routes'
 
 function BellIcon({ hasUnread }: { hasUnread: boolean }) {
     return (
@@ -93,7 +94,12 @@ export default function NotificationsBell() {
                                     <div className="text-xs text-gray-500 mt-1">{item.createdLabel}</div>
                                     {item.order_id && (
                                         <div className="text-xs text-blue-600 mt-1">
-                                            <Link to="/orders">Go to orders</Link>
+                                            <Link
+                                                to={orderDetailsPath(item.order_id)}
+                                                onClick={() => setOpen(false)}
+                                            >
+                                                Go to order
+                                            </Link>
                                         </div>
                                     )}
                                 </li>
