@@ -15,9 +15,19 @@ export default function Login() {
         e.preventDefault()
         setErr(null)
         try {
-            const res = await api.post('/auth/login', { username, password })
-            login(res.data.access_token, res.data.user)
-            nav('/orders')
+            // логин: ставим httpOnly-cookie (withCredentials)
+            const res = await api.post(
+                '/auth/login',
+                { username, password },
+                { withCredentials: true }
+            )
+
+            // сохраним токен/юзера для XHR-режима и guard'ов
+            const { access_token, user } = res.data
+            login(access_token, user)
+
+            // редирект по роли
+            nav(user?.role === 'staff' ? '/orders' : '/dashboard', { replace: true })
         } catch (e: any) {
             setErr(e?.response?.data?.detail || 'Login xatosi')
         }
@@ -25,15 +35,14 @@ export default function Login() {
 
     return (
         <div className="min-h-screen flex flex-col justify-center items-center bg-gray-50">
-            {/* Logo */}
             <div className="mb-6">
                 <img src="/lingua-logo.png" alt="Lingua Translation Logo" className="max-w-[400px]" />
             </div>
 
-            {/* Login form */}
             <form onSubmit={onSubmit} className="card w-full max-w-sm space-y-3">
                 <div className="text-4xl font-semibold text-center">Kirish</div>
                 {err && <div className="text-red-600 text-sm">{err}</div>}
+
                 <div>
                     <label className="text-sm">Email yoki telefon</label>
                     <input
@@ -43,6 +52,7 @@ export default function Login() {
                         className="w-full px-4 py-2 border rounded-lg"
                     />
                 </div>
+
                 <div>
                     <label className="text-sm">Parol</label>
                     <input
@@ -53,10 +63,8 @@ export default function Login() {
                         className="w-full px-4 py-2 border rounded-lg"
                     />
                 </div>
-                <button
-                    type="submit"
-                    className="w-full bg-blue-600 text-white py-2 rounded-lg"
-                >
+
+                <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-lg">
                     Kirish
                 </button>
             </form>

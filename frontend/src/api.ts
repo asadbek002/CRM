@@ -9,6 +9,7 @@ export const baseURL =
 const api = axios.create({
     baseURL,
     timeout: 15000,
+    withCredentials: true,
 })
 
 /** Request interceptor: токен + заголовки */
@@ -145,3 +146,190 @@ export async function fetchOrderAttachments(orderId: number) {
 /** Помощник для прямой ссылки на скачивание файла */
 export const buildAttachmentDownloadUrl = (id: number) =>
     `${baseURL}/attachments/${id}/download`
+
+// ===================== DASHBOARD API =====================
+
+export interface DashboardFiltersState {
+    date_from?: string
+    date_to?: string
+    branch_id?: number
+    manager_id?: number
+    customer_type?: string
+    doc_type?: string
+}
+
+export interface DashboardSummary {
+    orders_total: number
+    orders_in_progress: number
+    orders_completed: number
+    orders_overdue: number
+    payments_sum: number
+    payments_debt: number
+    files_pending: number
+    files_rejected: number
+}
+
+export interface DashboardTimelinePoint {
+    bucket: string
+    orders: number
+    payments: number
+}
+
+export interface DashboardTopResponse {
+    doc_types: { label: string; value: number }[]
+    customer_types: { label: string; value: number }[]
+}
+
+export interface DashboardFiltersResponse {
+    branches: { id: number; name: string }[]
+    managers: { id: number; name: string; role: string; branch_id: number | null }[]
+    doc_types: string[]
+    customer_types: string[]
+}
+
+export interface AuditLogItem {
+    id: number
+    action: string
+    entity_type: string
+    entity_id?: number | null
+    details?: string | null
+    created_at: string
+    user_name?: string | null
+}
+
+export async function fetchDashboardSummary(params: DashboardFiltersState) {
+    const { data } = await api.get<DashboardSummary>('/dashboard/summary', { params })
+    return data
+}
+
+export async function fetchDashboardTimeline(
+    params: DashboardFiltersState & { group_by: 'day' | 'week' | 'month' }
+) {
+    const { data } = await api.get<DashboardTimelinePoint[]>(
+        '/dashboard/timeline',
+        { params }
+    )
+    return data
+}
+
+export async function fetchDashboardTop(params: DashboardFiltersState) {
+    const { data } = await api.get<DashboardTopResponse>('/dashboard/top', { params })
+    return data
+}
+
+export async function fetchDashboardActivity() {
+    const { data } = await api.get<AuditLogItem[]>('/dashboard/activity')
+    return data
+}
+
+export async function fetchDashboardFilters() {
+    const { data } = await api.get<DashboardFiltersResponse>('/dashboard/filters')
+    return data
+}
+
+// ===================== USERS API =====================
+
+export interface UserDto {
+    id: number
+    full_name: string
+    email?: string | null
+    phone?: string | null
+    role: string
+    branch_id?: number | null
+    branch_name?: string | null
+    is_active: boolean
+    invited_at?: string | null
+    last_login_at?: string | null
+    created_at?: string | null
+}
+
+export interface UserFilterParams {
+    q?: string
+    role?: string
+    branch_id?: number
+    include_inactive?: boolean
+}
+
+export async function listUsers(params: UserFilterParams = {}) {
+    const { data } = await api.get<UserDto[]>('/users', { params })
+    return data
+}
+
+export interface UserCreatePayload {
+    full_name: string
+    email?: string
+    phone?: string
+    role: string
+    branch_id?: number
+    password?: string
+}
+
+export async function createUser(payload: UserCreatePayload) {
+    const { data } = await api.post<UserDto>('/users', payload)
+    return data
+}
+
+export type UserUpdatePayload = Partial<UserCreatePayload> & { is_active?: boolean }
+
+export async function updateUser(userId: number, payload: UserUpdatePayload) {
+    const { data } = await api.put<UserDto>(`/users/${userId}`, payload)
+    return data
+}
+
+export async function deactivateUser(userId: number) {
+    await api.delete(`/users/${userId}`)
+}
+
+export async function resetUserPassword(userId: number, password: string) {
+    await api.post(`/users/${userId}/reset-password`, { password })
+}
+
+export async function inviteUser(userId: number) {
+    const { data } = await api.post<{ invite_token: string }>(
+        `/users/${userId}/invite`
+    )
+    return data
+}
+// ===================== ATTACHMENT DOWNLOAD =====================
+
+/**
+ * Скачать файл (с сохранением имени и токеном)
+ */
+export async function downloadAttachment(id: number, fallbackName?: string) {
+    const res = await api.get(`/attachments/${id}/download`, {
+        responseType: 'blob',
+        headers: { Accept: '*/*' },
+    })
+
+    // Пытаемся вытащить имя файла из заголовка
+    const cd = res.headers['content-disposition'] || res.headers['Content-Disposition']
+    let filename = fallbackName || `attachment_${id}`
+    if (cd) {
+        const m = /filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i.exec(cd)
+        const raw = decodeURIComponent(m?.[1] || m?.[2] || '')
+        if (raw) filename = raw
+    }
+
+    const blob = new Blob([res.data])
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.URL.revokeObjectURL(url)
+}
+
+/**
+ * Предпросмотр файла (например PDF) в новой вкладке
+ */
+export async function previewAttachment(id: number) {
+    const res = await api.get(`/attachments/${id}/download`, {
+        responseType: 'blob',
+        headers: { Accept: '*/*' },
+    })
+    const url = window.URL.createObjectURL(res.data)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}

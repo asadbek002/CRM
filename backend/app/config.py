@@ -1,4 +1,7 @@
-﻿import os
+﻿# app/config.py
+from __future__ import annotations
+
+import os
 import re
 from pathlib import Path
 from typing import List, Set
@@ -21,13 +24,16 @@ def _get_list(name: str, default: str = "") -> List[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
-# === DB ===
+# === База данных ===
 RAW_DB_URL = os.getenv("DATABASE_URL", "sqlite:///./dev.db")
 
 
 def _normalize_sqlite_url(raw: str) -> str:
+    """
+    Превращает sqlite:///./dev.db -> абсолютный путь
+    """
     if raw.startswith("sqlite:///"):
-        rel = raw[10:]  # после 'sqlite:///'
+        rel = raw[len("sqlite:///"):]
         abs_path = (BACKEND_ROOT / rel).resolve()
         return f"sqlite:///{abs_path.as_posix()}"
     return raw
@@ -35,16 +41,17 @@ def _normalize_sqlite_url(raw: str) -> str:
 
 DATABASE_URL = _normalize_sqlite_url(RAW_DB_URL)
 
-# === Uploads ===
+# === Загрузки файлов ===
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
-UPLOAD_DIR = (BACKEND_ROOT / UPLOAD_DIR).resolve().as_posix()
-Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR = (BACKEND_ROOT / UPLOAD_DIR).resolve()  # Path
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-# Ограничения и утилиты
+# Ограничения и утилиты для файлов
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "15"))
-_allowed = _get_list("ALLOWED_MIME", "application/pdf,image/png,image/jpeg")
-ALLOWED_MIME: Set[str] = set(_allowed)
-ALLOWED_EXT:  Set[str] = set(_get_list("ALLOWED_EXT", "pdf,png,jpg,jpeg"))
+_allowed_mime = _get_list(
+    "ALLOWED_MIME", "application/pdf,image/png,image/jpeg")
+ALLOWED_MIME: Set[str] = set(_allowed_mime)
+ALLOWED_EXT: Set[str] = set(_get_list("ALLOWED_EXT", "pdf,png,jpg,jpeg"))
 SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -54,24 +61,38 @@ def sanitize_filename(name: str) -> str:
     return clean or "file"
 
 
-# JWT
+# === JWT / Auth ===
 JWT_SECRET = os.getenv("JWT_SECRET", "devsecret")
 JWT_ALG = os.getenv("JWT_ALG", "HS256")
 TOKEN_EXPIRE_MINUTES = int(os.getenv("TOKEN_EXPIRE_MINUTES", "60"))
 REFRESH_EXPIRE_MINUTES = int(
     os.getenv("REFRESH_EXPIRE_MINUTES", "43200"))  # 30 дней
 
-# CORS
+# === CORS ===
 CORS_ALLOW_ORIGINS = _get_list(
-    "CORS_ALLOW_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+    "CORS_ALLOW_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173",
+)
 CORS_ALLOW_CREDENTIALS = _get_bool("CORS_ALLOW_CREDENTIALS", True)
 
-# Прочее
+# === Прочее ===
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-API_PREFIX = os.getenv("API_PREFIX", "/api")
-MAX_FILES_PER_UPLOAD = int(os.getenv("MAX_FILES_PER_UPLOAD", "10"))
-VERIFY_BASE_URL = os.getenv("VERIFY_BASE_URL", "http://127.0.0.1:8000/verify")
 
-# Папка для QR
-QR_DIR = (BACKEND_ROOT / "qr").resolve()
+# Префикс всех API-роутов (например, /api)
+API_PREFIX = os.getenv("API_PREFIX", "/api")
+
+# Публичный корень (куда фронт стучится к бэку). Для локалки:
+# http://127.0.0.1:8000
+PUBLIC_ROOT = os.getenv("PUBLIC_ROOT", "http://127.0.0.1:8000")
+
+# Базовая ссылка для verify-роутов.
+# Можно переопределить через переменную окружения VERIFY_BASE_URL.
+VERIFY_BASE_URL = os.getenv(
+    "VERIFY_BASE_URL") or f"{PUBLIC_ROOT.rstrip('/')}{API_PREFIX}/verify"
+
+# Папка для PNG QR-кодов
+QR_DIR = (BACKEND_ROOT / "qr").resolve()  # Path
 QR_DIR.mkdir(parents=True, exist_ok=True)
+
+# Прочие настройки
+MAX_FILES_PER_UPLOAD = int(os.getenv("MAX_FILES_PER_UPLOAD", "10"))

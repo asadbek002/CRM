@@ -1,84 +1,121 @@
 ﻿# app/routers/verify.py
-# app/routers/verify.py
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+
+import qrcode
 from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from datetime import date as ddate
-import os, qrcode
 
 from app.database import get_session
-from app import models
-from app.config import VERIFY_BASE_URL, QR_DIR
+from app.models import VerifiedDoc
+from app.config import QR_DIR, VERIFY_BASE_URL, API_PREFIX
 
 router = APIRouter(prefix="/verify", tags=["verify"])
+
 
 @router.post("/create")
 def create_verified_doc(
     doc_number: str = Form(...),
     doc_title: str = Form(...),
     translator_name: str = Form(...),
-    issued_date: str | None = Form(None),
-    note_en: str | None = Form(None),
+    issued_date: str = Form(...),  # YYYY-MM-DD
+    note_en: str = Form(
+        "This document is certified and verified by LINGUA TRANSLATION."),
     order_id: int | None = Form(None),
     db: Session = Depends(get_session),
 ):
-    # 1) trim va bo‘sh qiymatlarni tekshirish
-    doc_number = (doc_number or "").strip()
-    doc_title = (doc_title or "").strip()
-    translator_name = (translator_name or "").strip()
-    if not doc_number or not doc_title or not translator_name:
-        raise HTTPException(status_code=422, detail="doc_number, doc_title, translator_name majburiy")
+    # 1) Проверяем формат даты
+    try:
+        issued_date_obj = datetime.strptime(issued_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
-    # 2) issued_date -> Python date
-    issued_dt = None
-    if issued_date:
-        try:
-            issued_dt = ddate.fromisoformat(issued_date)  # YYYY-MM-DD
-        except ValueError:
-            raise HTTPException(status_code=422, detail="issued_date format YYYY-MM-DD bo‘lishi kerak")
-
-    # 3) public_id va QR
-    public_id = models.VerifiedDoc.gen_public_id()
-    verify_url = f"{VERIFY_BASE_URL.rstrip('/')}/verify/{public_id}"
-
-    os.makedirs(QR_DIR, exist_ok=True)
-    qr_name = f"{public_id}.png"
-    qr_path = os.path.join(QR_DIR, qr_name)
-    img = qrcode.make(verify_url)
-    img.save(qr_path)
-
-    vd = models.VerifiedDoc(
-        public_id=public_id,
-        order_id=order_id,
+    # 2) Создаем запись
+    vd = VerifiedDoc(
         doc_number=doc_number,
         doc_title=doc_title,
         translator_name=translator_name,
-        issued_date=issued_dt,               # <-- endi date obyekt
+        issued_date=issued_date_obj,
         note_en=note_en,
-        is_active=True,
-        qr_filename=qr_name,                 # saqlab qo‘yish foydali
+        order_id=order_id,
     )
     db.add(vd)
     db.commit()
     db.refresh(vd)
 
+    # 3) Публичная ссылка проверки
+    verify_url = f"{VERIFY_BASE_URL}/{vd.public_id}"
+
+    # 4) Генерируем QR PNG в QR_DIR
+    filename = f"qr_{vd.public_id}.png"
+    path: Path = QR_DIR / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    img = qrcode.make(verify_url)
+    img.save(str(path))
+
+    # 5) Сохраняем имя файла
+    vd.qr_filename = filename
+    db.commit()
+    db.refresh(vd)
+
+    # 6) Возвращаем ссылки
     return {
+        "ok": True,
         "id": vd.id,
         "public_id": vd.public_id,
         "verify_url": verify_url,
-        "qr_image": f"/qr/{qr_name}",
+        # пути теперь под /api/
+        "qr_image": f"{API_PREFIX}/verify/qr/{vd.public_id}.png",
+        "qr_download": f"{API_PREFIX}/verify/qr/{vd.public_id}/download",
     }
 
+
 @router.get("/{public_id}")
-def verify_view(public_id: str, db: Session = Depends(get_session)):
-    vd = db.query(models.VerifiedDoc).filter(models.VerifiedDoc.public_id == public_id).first()
-    if not vd or not vd.is_active:
-        raise HTTPException(404, "Document not found or inactive")
+def check_verified_doc(public_id: str, db: Session = Depends(get_session)):
+    vd = (
+        db.query(VerifiedDoc)
+        .filter(VerifiedDoc.public_id == public_id, VerifiedDoc.is_active == True)
+        .first()
+    )
+    if not vd:
+        raise HTTPException(
+            status_code=404, detail="Document not found or inactive")
 
     return {
         "doc_number": vd.doc_number,
         "doc_title": vd.doc_title,
         "translator_name": vd.translator_name,
         "issued_date": str(vd.issued_date),
+        "verified": True,
         "note_en": vd.note_en,
-        "status": "verified",
+        "organization": "LINGUA TRANSLATION",
     }
+
+
+@router.get("/qr/{public_id}.png")
+def get_qr_png(public_id: str):
+    """Просмотр QR как картинки (для <img src="...">)."""
+    safe_name = f"qr_{public_id}.png"
+    path = QR_DIR / safe_name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="QR not found")
+    return FileResponse(str(path), media_type="image/png")
+
+
+@router.get("/qr/{public_id}/download")
+def download_qr(public_id: str):
+    """Принудительное скачивание PNG."""
+    safe_name = f"qr_{public_id}.png"
+    path = QR_DIR / safe_name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="QR not found")
+    return FileResponse(
+        str(path),
+        media_type="image/png",
+        filename=safe_name,
+    )

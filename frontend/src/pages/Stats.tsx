@@ -1,5 +1,12 @@
+﻿// src/pages/Stats.tsx
 import { useState, useEffect } from 'react'
 import api from '../api'
+import dayjs from 'dayjs'
+import isoWeek from 'dayjs/plugin/isoWeek'
+import localizedFormat from 'dayjs/plugin/localizedFormat'
+
+dayjs.extend(isoWeek)
+dayjs.extend(localizedFormat)
 
 type PaymentState = 'UNPAID' | 'PARTIAL' | 'PAID'
 
@@ -36,7 +43,38 @@ const formatCurrency = (value: number | undefined | null) => {
     return num.toLocaleString('uz-UZ')
 }
 
-const emptyStateStats = (): StateStats => ({ count: 0, total_amount: 0, paid_amount: 0, balance: 0 })
+const emptyStateStats = (): StateStats => ({
+    count: 0,
+    total_amount: 0,
+    paid_amount: 0,
+    balance: 0,
+})
+
+function formatBucket(bucket: string, gran: 'daily' | 'weekly' | 'monthly') {
+    if (!bucket) return '-'
+
+    if (gran === 'daily') {
+        // bucket: '2025-09-16' или '2025-9-16'
+        return dayjs(bucket).format('D MMM YYYY')
+    }
+
+    if (gran === 'weekly') {
+        // bucket: 'YYYY-WW' (пример: '2025-38')
+        const [y, w] = bucket.split('-').map(Number)
+        const start = dayjs().year(y).isoWeek(w).startOf('isoWeek')
+        const end = start.endOf('isoWeek')
+        // 15–21 Sep 2025
+        const sameMonth = start.month() === end.month()
+        const left = start.format('D MMM')
+        const right = sameMonth ? end.format('D MMM YYYY') : end.format('D MMM YYYY')
+        return `${left}–${right}`
+    }
+
+    // monthly: 'YYYY-MM'
+    const [y, m] = bucket.split('-').map(Number)
+    // dayjs: месяц 0-11
+    return dayjs().year(y).month((m ?? 1) - 1).startOf('month').format('MMM YYYY')
+}
 
 export default function StatsPage() {
     const [gran, setGran] = useState<'daily' | 'weekly' | 'monthly'>('daily')
@@ -51,17 +89,20 @@ export default function StatsPage() {
 
             ; (async () => {
                 try {
-                    const response = await api.get('/orders/stats/payments', { params: { granularity: gran } })
+                    const response = await api.get('/orders/stats/payments', {
+                        params: { granularity: gran },
+                    })
                     if (!active) return
                     const rawRows = (response.data?.rows ?? []) as any[]
-                    const normalized: StatRow[] = rawRows.map(item => {
+
+                    const normalized: StatRow[] = rawRows.map((item) => {
                         const states: Record<PaymentState, StateStats> = {
                             PAID: emptyStateStats(),
                             PARTIAL: emptyStateStats(),
                             UNPAID: emptyStateStats(),
                         }
 
-                        STATUS_ORDER.forEach(key => {
+                        STATUS_ORDER.forEach((key) => {
                             const stats = item?.states?.[key] ?? {}
                             states[key] = {
                                 count: Number(stats.count ?? 0),
@@ -86,9 +127,7 @@ export default function StatsPage() {
                     setError("Ma'lumotni yuklashda xatolik yuz berdi")
                     setRows([])
                 } finally {
-                    if (active) {
-                        setLoading(false)
-                    }
+                    if (active) setLoading(false)
                 }
             })()
 
@@ -102,7 +141,7 @@ export default function StatsPage() {
             acc.orders += row.orders
             acc.sum += row.sum
             acc.total_amount += row.total_amount
-            STATUS_ORDER.forEach(key => {
+            STATUS_ORDER.forEach((key) => {
                 const src = row.states[key] ?? emptyStateStats()
                 const dst = acc.states[key]
                 dst.count += src.count
@@ -127,12 +166,15 @@ export default function StatsPage() {
     return (
         <div className="mx-auto w-full max-w-[1600px] px-4 py-6">
             <h1 className="text-2xl mb-4">To'lovlar statistikasi</h1>
+
             <div className="flex flex-wrap gap-2 mb-4">
-                {GRAN_OPTIONS.map(opt => (
+                {GRAN_OPTIONS.map((opt) => (
                     <button
                         key={opt.key}
                         onClick={() => setGran(opt.key)}
-                        className={`px-3 py-1 rounded border transition ${gran === opt.key ? 'bg-blue-600 text-white border-blue-600' : 'bg-white hover:bg-gray-100'
+                        className={`px-3 py-1 rounded border transition ${gran === opt.key
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-white hover:bg-gray-100'
                             }`}
                     >
                         {opt.label}
@@ -150,34 +192,48 @@ export default function StatsPage() {
                             <th className="px-3 py-2">Buyurtmalar</th>
                             <th className="px-3 py-2">Umumiy summa</th>
                             <th className="px-3 py-2">Jami to'langan</th>
-                            {STATUS_ORDER.map(state => (
+                            {STATUS_ORDER.map((state) => (
                                 <th key={state} className="px-3 py-2">
                                     {STATUS_LABELS[state]}
                                 </th>
                             ))}
                         </tr>
                     </thead>
+
                     <tbody>
                         {loading ? (
                             <tr>
-                                <td colSpan={4 + STATUS_ORDER.length} className="px-3 py-6 text-center text-gray-500">
+                                <td
+                                    colSpan={4 + STATUS_ORDER.length}
+                                    className="px-3 py-6 text-center text-gray-500"
+                                >
                                     Yuklanmoqda...
                                 </td>
                             </tr>
                         ) : rows.length === 0 ? (
                             <tr>
-                                <td colSpan={4 + STATUS_ORDER.length} className="px-3 py-6 text-center text-gray-500">
+                                <td
+                                    colSpan={4 + STATUS_ORDER.length}
+                                    className="px-3 py-6 text-center text-gray-500"
+                                >
                                     Ma'lumot topilmadi
                                 </td>
                             </tr>
                         ) : (
-                            rows.map(row => (
+                            rows.map((row) => (
                                 <tr key={row.bucket} className="border-b">
-                                    <td className="px-3 py-2 align-top font-medium">{row.bucket || '-'}</td>
+                                    <td className="px-3 py-2 align-top font-medium">
+                                        {formatBucket(row.bucket, gran)}
+                                    </td>
                                     <td className="px-3 py-2 align-top">{row.orders}</td>
-                                    <td className="px-3 py-2 align-top">{formatCurrency(row.total_amount)}</td>
-                                    <td className="px-3 py-2 align-top text-green-700">{formatCurrency(row.sum)}</td>
-                                    {STATUS_ORDER.map(state => {
+                                    <td className="px-3 py-2 align-top">
+                                        {formatCurrency(row.total_amount)}
+                                    </td>
+                                    <td className="px-3 py-2 align-top text-green-700">
+                                        {formatCurrency(row.sum)}
+                                    </td>
+
+                                    {STATUS_ORDER.map((state) => {
                                         const stats = row.states[state] ?? emptyStateStats()
                                         return (
                                             <td key={state} className="px-3 py-2 align-top">
@@ -200,6 +256,7 @@ export default function StatsPage() {
                             ))
                         )}
                     </tbody>
+
                     {rows.length > 0 && !loading && (
                         <tfoot>
                             <tr className="bg-gray-100 font-semibold">
@@ -207,7 +264,7 @@ export default function StatsPage() {
                                 <td className="px-3 py-2">{totals.orders}</td>
                                 <td className="px-3 py-2">{formatCurrency(totals.total_amount)}</td>
                                 <td className="px-3 py-2">{formatCurrency(totals.sum)}</td>
-                                {STATUS_ORDER.map(state => {
+                                {STATUS_ORDER.map((state) => {
                                     const stats = totals.states[state]
                                     return (
                                         <td key={state} className="px-3 py-2">

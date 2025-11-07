@@ -1,0 +1,53 @@
+﻿diff --git a/backend/app/routers/orders.py b/backend/app/routers/orders.py
+index 0000000..0000001 100644
+--- a/backend/app/routers/orders.py
++++ b/backend/app/routers/orders.py
+@@ -1,999 +1,999 @@
+-# PLACEHOLDER_OLD_STAFF_FILTER
++# staff должен видеть все заказы, без ограничения по своему филиалу/менеджеру
++# правка: убрать любые фильтры по current_user для staff и проверки на order.manager_id
+
+diff --git a/backend/app/routers/comments.py b/backend/app/routers/comments.py
+index 0000000..0000001 100644
+--- a/backend/app/routers/comments.py
++++ b/backend/app/routers/comments.py
+@@ -1,999 +1,999 @@
+-# PLACEHOLDER_OLD_COMMENTS_GUARD
++# staff может читать/добавлять комментарии ко всем заказам (нет проверки order.manager_id == user.id)
+
+diff --git a/backend/app/routers/attachments.py b/backend/app/routers/attachments.py
+index 0000000..0000001 100644
+--- a/backend/app/routers/attachments.py
++++ b/backend/app/routers/attachments.py
+@@ -1,999 +1,999 @@
+-# PLACEHOLDER_OLD_ATTACH_GUARD
++# staff может видеть/скачивать вложения ко всем заказам (нет проверки order.manager_id == user.id)
+
+diff --git a/backend/app/routers/dashboard.py b/backend/app/routers/dashboard.py
+index 0000000..0000001 100644
+--- a/backend/app/routers/dashboard.py
++++ b/backend/app/routers/dashboard.py
+@@ -1,10 +1,20 @@
+-from fastapi import APIRouter
+-router = APIRouter()
++from fastapi import APIRouter, Depends, HTTPException, status
++from app.deps import require_roles
++# закрываем dashboard для staff на уровне API
++router = APIRouter(dependencies=[Depends(require_roles("admin","manager","accountant"))])
+
+diff --git a/backend/app/deps.py b/backend/app/deps.py
+index 0000000..0000001 100644
+--- a/backend/app/deps.py
++++ b/backend/app/deps.py
+@@ -1,50 +1,90 @@
+-# PLACEHOLDER_OLD_ENSURE_BRANCH_SCOPE
++from typing import Optional
++from fastapi import HTTPException, status, Depends
++from app import models
++
++def ensure_branch_scope(current_user: models.User, branch_id: Optional[int] = None):
++    # staff не ограничиваем выбранным при создании филиалом — всегда отдаём то, что запросили
++    if current_user.role == models.Role.staff:
++        return branch_id
++    # для остальных логика как была (если была иная — сохрани)
++    return branch_id

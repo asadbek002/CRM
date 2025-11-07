@@ -1,7 +1,7 @@
 // src/auth.tsx
 import { createContext, useContext, useEffect, useState } from 'react'
 
-type User = { id: number; name: string; role: string } | null
+type User = { id: number; name: string; role: string; branch_id?: number | null } | null
 type Ctx = {
   user: User
   token: string | null

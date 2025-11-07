@@ -11,7 +11,7 @@ type Order = {
     created_at?: string;
 };
 
-// Pydantic xatolarini o‘qiladigan ko‘rinishga aylantirish
+// Xatoliklarni o‘qiladigan shaklga keltiramiz
 function parseApiError(e: any): string[] {
     const d = e?.response?.data?.detail;
     if (Array.isArray(d)) {
@@ -29,7 +29,6 @@ export default function OrderVerify() {
     const nav = useNavigate();
     const [order, setOrder] = useState<Order | null>(null);
 
-    // Form maydonlari (state nomlari backend maydonlari bilan mos)
     const [doc_number, setNum] = useState("");
     const [doc_title, setTitle] = useState("");
     const [translator_name, setTr] = useState("");
@@ -37,7 +36,7 @@ export default function OrderVerify() {
         const d = new Date();
         const m = String(d.getMonth() + 1).padStart(2, "0");
         const day = String(d.getDate()).padStart(2, "0");
-        return `${d.getFullYear()}-${m}-${day}`; // 'YYYY-MM-DD'
+        return `${d.getFullYear()}-${m}-${day}`;
     });
 
     const [loading, setLoading] = useState(false);
@@ -52,7 +51,6 @@ export default function OrderVerify() {
                 const r = await api.get(`/orders/${oid}`);
                 const o: Order = r.data;
                 setOrder(o);
-                // Avto-to‘ldirish
                 setNum(`${o.id}-${new Date().getFullYear()}`);
                 setTitle(o.doc_type || "Document");
                 setTr(o.manager || "");
@@ -69,7 +67,6 @@ export default function OrderVerify() {
         setErrors([]);
 
         try {
-            // FormData yuboramiz (backend Form(...) kutyapti)
             const form = new FormData();
             form.append("doc_number", (doc_number || "").trim());
             form.append("doc_title", (doc_title || "").trim());
@@ -82,7 +79,6 @@ export default function OrderVerify() {
             );
 
             const r = await api.post("/verify/create", form);
-            // Backend javobi: { id, public_id, verify_url, qr_image }
             setResult(r.data);
         } catch (e: any) {
             setErrors(parseApiError(e));
@@ -90,6 +86,17 @@ export default function OrderVerify() {
         } finally {
             setLoading(false);
         }
+    }
+
+    // функция для скачивания PNG
+    function handleDownload(publicId: string) {
+        const base = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+        const a = document.createElement("a");
+        a.href = `${base}/verify/qr/${publicId}/download`;
+        a.setAttribute("download", `qr_${publicId}.png`);
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
     }
 
     if (!order) return <div className="p-8 text-center">Yuklanmoqda...</div>;
@@ -151,12 +158,17 @@ export default function OrderVerify() {
                             {result.verify_url}
                         </a>
                     </div>
+
                     {result.qr_image && (
                         <>
                             <img src={result.qr_image} alt="QR" style={{ width: 220 }} />
-                            <a className="underline text-sm" href={result.qr_image} download>
+                            <button
+                                type="button"
+                                onClick={() => handleDownload(result.public_id)}
+                                className="underline text-sm"
+                            >
                                 QR PNG’ni yuklab olish
-                            </a>
+                            </button>
                         </>
                     )}
                 </div>

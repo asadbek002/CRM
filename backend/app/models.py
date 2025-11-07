@@ -1,14 +1,26 @@
 # app/models.py
+from __future__ import annotations
+
+import enum
+from uuid import uuid4
+
 from sqlalchemy import (
-    Column, Integer, String, ForeignKey, Date, DateTime, Enum, Numeric, Text, func, Boolean
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import declarative_base, relationship
-from uuid import uuid4
-from sqlalchemy import Column, Integer, Text, ForeignKey, DateTime, func
-from sqlalchemy.orm import relationship
-import enum
 
 Base = declarative_base()
+
 
 # ---------------- Enums ----------------
 
@@ -16,6 +28,8 @@ Base = declarative_base()
 class Role(str, enum.Enum):
     admin = "admin"
     manager = "manager"
+    staff = "staff"
+    accountant = "accountant"
     viewer = "viewer"
 
 
@@ -52,11 +66,19 @@ class AttachmentKind(str, enum.Enum):
     notary = "notary"
     other = "other"
 
+
+class AttachmentStatus(str, enum.Enum):
+    pending_review = "pending_review"
+    approved = "approved"
+    rejected = "rejected"
+
+
 # ---------------- Entities ----------------
 
 
 class Branch(Base):
     __tablename__ = "branches"
+
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     city = Column(String)
@@ -64,19 +86,29 @@ class Branch(Base):
 
 class User(Base):
     __tablename__ = "users"
+
     id = Column(Integer, primary_key=True)
     full_name = Column(String, nullable=False)
     phone = Column(String, unique=True, index=True)
     email = Column(String, unique=True)
     password_hash = Column(String, nullable=False)
-    role = Column(Enum(Role), default=Role.manager)
+    role = Column(Enum(Role), default=Role.manager, nullable=False)
 
     branch_id = Column(ForeignKey("branches.id"))
     branch = relationship(Branch)
 
+    is_active = Column(Boolean, default=True, nullable=False)
+    invited_at = Column(DateTime)
+    last_login_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    invite_token = Column(String, nullable=True)
+    reset_token = Column(String, nullable=True)
+
 
 class Client(Base):
     __tablename__ = "clients"
+
     id = Column(Integer, primary_key=True)
     full_name = Column(String, nullable=False)
     phone = Column(String, index=True)
@@ -85,10 +117,15 @@ class Client(Base):
 
 class Comment(Base):
     __tablename__ = "comments"
+
     id = Column(Integer, primary_key=True)
-    order_id = Column(Integer, ForeignKey(
-        "orders.id", ondelete="CASCADE"), index=True, nullable=False)
-    author = Column(Text, nullable=True)          # можно хранить имя/логин
+    order_id = Column(
+        Integer,
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    author = Column(Text, nullable=True)
     text = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
@@ -97,6 +134,7 @@ class Comment(Base):
 
 class Order(Base):
     __tablename__ = "orders"
+
     id = Column(Integer, primary_key=True)
 
     client_id = Column(ForeignKey("clients.id"), nullable=False)
@@ -135,16 +173,20 @@ class Order(Base):
         back_populates="order",
         cascade="all,delete-orphan",
         passive_deletes=True,
-        order_by="Attachment.id"
+        order_by="Attachment.id",
     )
 
 
 class Payment(Base):
     __tablename__ = "payments"
+
     id = Column(Integer, primary_key=True)
 
-    order_id = Column(ForeignKey(
-        "orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    order_id = Column(
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     order = relationship("Order", back_populates="payments")
 
     amount = Column(Numeric(12, 2), nullable=False)
@@ -155,28 +197,62 @@ class Payment(Base):
 
 class Attachment(Base):
     __tablename__ = "attachments"
+
     id = Column(Integer, primary_key=True)
 
-    order_id = Column(ForeignKey(
-        "orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    order_id = Column(
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     order = relationship("Order", back_populates="attachments")
 
-    kind = Column(Enum(AttachmentKind),
-                  default=AttachmentKind.translation, nullable=False)
+    kind = Column(Enum(AttachmentKind), default=AttachmentKind.translation, nullable=False)
+    status = Column(
+        Enum(AttachmentStatus),
+        default=AttachmentStatus.pending_review,
+        nullable=False,
+    )
     filename = Column(String(255), nullable=False)
     original_name = Column(String(255), nullable=True)
     mime = Column(String(100), nullable=True)
     size = Column(Integer, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
-    uploaded_by = Column(ForeignKey("users.id"), nullable=True)
+
+    uploaded_by_id = Column("uploaded_by", ForeignKey("users.id"), nullable=True)
+    uploader = relationship("User", foreign_keys=[uploaded_by_id])
+
+    reviewed_by_id = Column(ForeignKey("users.id"), nullable=True)
+    reviewed_by = relationship("User", foreign_keys=[reviewed_by_id], post_update=True)
+    reviewed_at = Column(DateTime)
+    review_comment = Column(Text)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(ForeignKey("users.id"), nullable=True)
+    user = relationship("User")
+    branch_id = Column(ForeignKey("branches.id"), nullable=True)
+    branch = relationship("Branch")
+    action = Column(String, nullable=False)
+    entity_type = Column(String, nullable=False)
+    entity_id = Column(Integer, nullable=True)
+    details = Column(Text)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
 
 class VerifiedDoc(Base):
     __tablename__ = "verified_docs"
 
     id = Column(Integer, primary_key=True)
-    public_id = Column(String(36), unique=True, index=True,
-                       default=lambda: str(uuid4()))
+    public_id = Column(
+        String(36),
+        unique=True,
+        index=True,
+        default=lambda: str(uuid4()),
+    )
     order_id = Column(ForeignKey("orders.id"), nullable=True)
 
     doc_number = Column(String, nullable=False)
@@ -184,7 +260,9 @@ class VerifiedDoc(Base):
     translator_name = Column(String, nullable=False)
     issued_date = Column(Date, default=func.current_date())
     note_en = Column(
-        String, default="This document is certified and verified by LINGUA TRANSLATION.")
+        String,
+        default="This document is certified and verified by LINGUA TRANSLATION.",
+    )
 
     is_active = Column(Boolean, default=True)
     qr_filename = Column(String, nullable=True)

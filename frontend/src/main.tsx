@@ -21,6 +21,8 @@ import VerifyCreate from './pages/VerifyCreate'
 import VerifyView from './pages/VerifyView'
 import OrderVerify from './pages/OrderVerify'
 import Stats from './pages/Stats'
+import Dashboard from './pages/Dashboard'
+import Employees from './pages/Employees'
 
 const qc = new QueryClient()
 
@@ -37,11 +39,18 @@ function Header() {
         <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4">
                 <span className="text-3xl font-semibold">Lingua Translation CRM system</span>
+
                 {token && (
                     <>
+                        {/* Dashboard — скрыт для staff */}
+                        {user?.role !== 'staff' && <Link to="/dashboard">Dashboard</Link>}
+
                         <Link to="/orders">Buyurtmalar</Link>
                         <Link to="/orders/new">Yangi buyurtma</Link>
                         <Link to="/stats">Hisobot</Link>
+
+                        {/* только для admin */}
+                        {user?.role === 'admin' && <Link to="/employees">Xodimlar</Link>}
                     </>
                 )}
             </div>
@@ -76,10 +85,34 @@ function Layout({ children }: { children: React.ReactNode }) {
     )
 }
 
+/* Ограничитель по ролям: если нет доступа — уводим на домашний роут,
+   чтобы не было белого экрана/циклов */
+function RequireRole({ roles, children }: { roles: string[]; children: JSX.Element }) {
+    const { user } = useAuth()
+    if (!user || !roles.includes(user.role)) {
+        return <Navigate to="/" replace />
+    }
+    return children
+}
+
+/* Запрет только для staff (удобно для /dashboard) */
+function RequireNotStaff({ children }: { children: JSX.Element }) {
+    const { user } = useAuth()
+    if (user?.role === 'staff') return <Navigate to="/orders" replace />
+    return children
+}
+
+/* Домашний редирект: staff → /orders, остальные → /dashboard */
+function HomeRedirect() {
+    const { user } = useAuth()
+    if (!user) return <Navigate to="/login" replace />
+    return <Navigate to={user.role === 'staff' ? '/orders' : '/dashboard'} replace />
+}
+
 function App() {
     return (
         <Routes>
-            {/* Login — himoyasiz */}
+            {/* Login — без защиты */}
             <Route
                 path="/login"
                 element={
@@ -89,7 +122,7 @@ function App() {
                 }
             />
 
-            {/* Verify sahifalari — hozircha himoyasiz */}
+            {/* Verify — публичные */}
             <Route
                 path="/verify/create"
                 element={
@@ -107,7 +140,7 @@ function App() {
                 }
             />
 
-            {/* Himoyalangan sahifalar */}
+            {/* Защищённые страницы */}
             <Route
                 path="/orders"
                 element={
@@ -149,8 +182,6 @@ function App() {
                 }
             />
 
-            {/* Yangi: Calendar va Stats */}
-
             <Route
                 path="/stats"
                 element={
@@ -162,8 +193,43 @@ function App() {
                 }
             />
 
-            {/* Default */}
-            <Route path="*" element={<Navigate to="/orders" />} />
+            <Route
+                path="/dashboard"
+                element={
+                    <RequireAuth>
+                        <RequireNotStaff>
+                            <Layout>
+                                <Dashboard />
+                            </Layout>
+                        </RequireNotStaff>
+                    </RequireAuth>
+                }
+            />
+
+            <Route
+                path="/employees"
+                element=
+                {
+                    <RequireAuth>
+                        <RequireRole roles={['admin']}>
+                            <Layout>
+                                <Employees />
+                            </Layout>
+                        </RequireRole>
+                    </RequireAuth>
+                }
+            />
+
+            {/* Домашний и дефолтные редиректы */}
+            <Route
+                path="/"
+                element={
+                    <RequireAuth>
+                        <HomeRedirect />
+                    </RequireAuth>
+                }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
     )
 }
