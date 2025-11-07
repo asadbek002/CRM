@@ -23,6 +23,7 @@ from app.database import get_session
 from app import models, schemas
 from app.deps import ensure_branch_scope, get_current_user, require_roles
 from app.services.audit import log_action
+from app.services import notifications as notification_service
 from pydantic import BaseModel, constr
 from app.config import (
     ATTACHMENTS_ROOT,
@@ -608,6 +609,25 @@ def upload_for_order(
     db.add(att)
     db.flush()
 
+    notif: models.Notification | None = None
+    if o.manager_id:
+        display_name = att.original_name or att.filename
+        payload = {
+            "order_id": o.id,
+            "attachment_id": att.id,
+            "filename": display_name,
+            "uploaded_by": current_user.full_name,
+        }
+        message = f"New file uploaded for order #{o.id}: {display_name}"
+        notif = notification_service.create_notification(
+            db,
+            user_id=o.manager_id,
+            kind=models.NotificationKind.file_uploaded,
+            message=message,
+            order_id=o.id,
+            payload=payload,
+        )
+
     log_action(
         db,
         user=current_user,
@@ -620,6 +640,10 @@ def upload_for_order(
 
     db.commit()
     db.refresh(att)
+
+    if notif:
+        db.refresh(notif)
+        notification_service.queue_delivery(notif)
 
     return {"id": att.id, "kind": att.kind.value, "status": att.status.value}
 

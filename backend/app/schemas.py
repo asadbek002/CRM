@@ -1,7 +1,7 @@
 # app/schemas.py
 from datetime import date, datetime
-from datetime import date, datetime
-from typing import Optional
+from enum import Enum
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, constr, field_validator, EmailStr
 
@@ -194,3 +194,28 @@ class DashboardTimelinePoint(BaseModel):
 class DashboardTopItem(BaseModel):
     label: str
     value: int
+
+
+class NotificationKind(str, Enum):
+    file_uploaded = "file_uploaded"
+    comment_added = "comment_added"
+    deadline_due = "deadline_due"
+
+
+class NotificationOut(BaseModel):
+    id: int
+    user_id: int
+    order_id: Optional[int]
+    kind: NotificationKind
+    message: str
+    payload: Optional[dict[str, Any]] = None
+    is_read: bool
+    created_at: datetime
+    read_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+class NotificationsMarkReadResponse(BaseModel):
+    updated: int

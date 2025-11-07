@@ -124,6 +124,36 @@ export async function deleteComment(
     await api.delete(`/orders/${orderId}/comments/${commentId}`)
 }
 
+// ===================== NOTIFICATIONS API =====================
+
+export type NotificationKind = 'file_uploaded' | 'comment_added' | 'deadline_due'
+
+export interface NotificationItem {
+    id: number
+    user_id: number
+    order_id: number | null
+    kind: NotificationKind
+    message: string
+    payload?: Record<string, unknown> | null
+    is_read: boolean
+    created_at: string
+    read_at?: string | null
+}
+
+export async function fetchNotifications(limit = 50) {
+    const { data } = await api.get<NotificationItem[]>(`/api/notifications`, {
+        params: { limit },
+    })
+    return data
+}
+
+export async function markNotificationsRead() {
+    const { data } = await api.post<{ updated: number }>(
+        `/api/notifications/mark-read`
+    )
+    return data
+}
+
 // ===================== ATTACHMENTS API =====================
 
 export type AttachmentKind = 'translation' | 'apostille' | 'notary'

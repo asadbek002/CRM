@@ -23,6 +23,8 @@ import OrderVerify from './pages/OrderVerify'
 import Stats from './pages/Stats'
 import Dashboard from './pages/Dashboard'
 import Employees from './pages/Employees'
+import NotificationsBell from './components/NotificationsBell'
+import { NotificationProvider } from './notifications'
 
 const qc = new QueryClient()
 
@@ -58,6 +60,7 @@ function Header() {
             </div>
 
             <div className="flex items-center gap-3">
+                {token && <NotificationsBell />}
                 {!token ? (
                     <Link
                         to="/login"
@@ -234,9 +237,11 @@ createRoot(document.getElementById('root')!).render(
     <StrictMode>
         <QueryClientProvider client={qc}>
             <AuthProvider>
-                <BrowserRouter>
-                    <App />
-                </BrowserRouter>
+                <NotificationProvider>
+                    <BrowserRouter>
+                        <App />
+                    </BrowserRouter>
+                </NotificationProvider>
             </AuthProvider>
         </QueryClientProvider>
     </StrictMode>
