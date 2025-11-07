@@ -12,6 +12,7 @@ from app.database import engine
 from app import models
 from app.database import init_db
 from app.routers import comments
+from app.routers import notifications as notifications_router
 
 # config – mavjud bo‘lmasa ham ishlashi uchun fallbacklar qo‘yamiz
 try:
@@ -29,6 +30,7 @@ except Exception:
 
 # routerlar
 from app.routers import auth, clients, orders, payments, attachments, users, dashboard
+from app.services import notifications as notification_service
 # verify router ichida prefix bo‘lsa, shu holatda qoladi
 from app.routers.verify import router as verify_router
 
@@ -60,6 +62,7 @@ app.include_router(orders.router)
 app.include_router(payments.router)
 app.include_router(attachments.router)
 app.include_router(comments.router)
+app.include_router(notifications_router.router)
 app.include_router(users.router)
 app.include_router(dashboard.router)
 app.include_router(verify.router, prefix=API_PREFIX)
@@ -87,3 +90,13 @@ def root():
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.on_event("startup")
+async def _start_background_tasks() -> None:
+    await notification_service.start_deadline_notifier()
+
+
+@app.on_event("shutdown")
+async def _stop_background_tasks() -> None:
+    await notification_service.stop_deadline_notifier()

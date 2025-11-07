@@ -73,6 +73,12 @@ class AttachmentStatus(str, enum.Enum):
     rejected = "rejected"
 
 
+class NotificationType(str, enum.Enum):
+    file_uploaded = "file_uploaded"
+    comment_added = "comment_added"
+    deadline_due = "deadline_due"
+
+
 # ---------------- Entities ----------------
 
 
@@ -226,6 +232,27 @@ class Attachment(Base):
     reviewed_by = relationship("User", foreign_keys=[reviewed_by_id], post_update=True)
     reviewed_at = Column(DateTime)
     review_comment = Column(Text)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True)
+
+    user_id = Column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user = relationship("User")
+
+    order_id = Column(ForeignKey("orders.id", ondelete="SET NULL"), nullable=True, index=True)
+    order = relationship("Order")
+
+    type = Column(String(50), nullable=False)
+    title = Column(String(255), nullable=False)
+    message = Column(Text)
+    payload = Column(Text)
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    read_at = Column(DateTime)
+    dedupe_date = Column(Date)
 
 
 class AuditLog(Base):

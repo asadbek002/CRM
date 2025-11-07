@@ -22,6 +22,7 @@ from app.database import get_session
 from app import models, schemas
 from app.deps import ensure_branch_scope, get_current_user, require_roles
 from app.services.audit import log_action
+from app.services import notifications as notification_service
 from pydantic import BaseModel, constr
 from app.config import (
     UPLOAD_DIR,
@@ -481,8 +482,40 @@ def upload_for_order(
         extra={"order_id": o.id, "kind": kind_enum.value},
     )
 
+    notifications_to_dispatch: list[models.Notification] = []
+    if o.manager_id:
+        uploader_name = (
+            current_user.full_name
+            or current_user.email
+            or current_user.phone
+            or "Foydalanuvchi"
+        )
+        payload = {
+            "order_id": o.id,
+            "kind": kind_enum.value,
+            "filename": safe_orig,
+        }
+        if o.client:
+            payload["client_name"] = o.client.full_name
+
+        notifications_to_dispatch.append(
+            notification_service.queue_notification(
+                db,
+                user_id=o.manager_id,
+                notif_type=models.NotificationType.file_uploaded,
+                title="Yangi fayl yuklandi",
+                message=(
+                    f"{uploader_name} buyurtma #{o.id} uchun '{safe_orig}' faylini yukladi."
+                ),
+                order=o,
+                payload=payload,
+            )
+        )
+
     db.commit()
     db.refresh(att)
+
+    notification_service.dispatch_notifications(db, notifications_to_dispatch)
 
     return {"id": att.id, "kind": att.kind.value, "status": att.status.value}
 
